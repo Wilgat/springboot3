@@ -1,0 +1,390 @@
+#!/bin/sh
+
+# ────────────────────────────────────────────────
+#  springboot3 – version 1.0.0
+#  One-command installer + launcher for Spring Boot 3.x
+#    • Installs itself if not present
+#    • Installs SDKMAN! if missing
+#    • Installs Java 21 (Temurin) – compatible with Java 25 when available
+#    • Installs latest Maven 3.9.x
+#    • Creates & runs minimal Spring Boot 3.3.5 Hello World
+# ────────────────────────────────────────────────
+
+VERSION="1.0.0"
+
+# Colors
+if [ -t 1 ]; then
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    RED='\033[0;31m'
+    NC='\033[0m'
+else
+    GREEN='' YELLOW='' RED='' NC=''
+fi
+
+# ────────────────────────────────────────────────
+# Installation path logic
+# ────────────────────────────────────────────────
+
+if [ "$(id -u)" -eq 0 ]; then
+    INSTALL_DIR="/usr/local/bin"
+    INSTALL_PATH="$INSTALL_DIR/springboot3"
+    NEEDS_SUDO=false
+else
+    INSTALL_DIR="${HOME}/.local/bin"
+    INSTALL_PATH="$INSTALL_DIR/springboot3"
+    NEEDS_SUDO=true
+fi
+
+# ────────────────────────────────────────────────
+# Helpers
+# ────────────────────────────────────────────────
+
+is_installed() {
+    [ -f "$INSTALL_PATH" ] && [ -x "$INSTALL_PATH" ]
+}
+
+in_path() {
+    case ":${PATH}:" in
+        *:"${INSTALL_DIR}":*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+add_to_bashrc() {
+    local bashrc="${HOME}/.bashrc"
+    local line="export PATH=\"\$HOME/.local/bin:\$PATH\""
+
+    if [ -f "$bashrc" ] && grep -qF "$line" "$bashrc" 2>/dev/null; then
+        return
+    fi
+
+    echo "" >> "$bashrc"
+    echo "# Added by springboot3 installer" >> "$bashrc"
+    echo "$line" >> "$bashrc"
+    echo "${YELLOW}→ Added ~/.local/bin to PATH in ~/.bashrc${NC}"
+}
+
+# ────────────────────────────────────────────────
+# Self-install logic – continues after install
+# ────────────────────────────────────────────────
+
+install_self() {
+    echo ""
+    echo "${YELLOW}springboot3 not found → installing...${NC}"
+    echo ""
+
+    if $NEEDS_SUDO; then
+        echo "Recommended install command (use bash explicitly):"
+        echo "  ${GREEN}sudo curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash${NC}"
+    else
+        echo "Recommended install command (use bash explicitly):"
+        echo "  ${GREEN}curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash${NC}"
+    fi
+
+    echo ""
+
+    mkdir -p "$INSTALL_DIR" 2>/dev/null || {
+        echo "${RED}Cannot create directory $INSTALL_DIR${NC}" >&2
+        exit 1
+    }
+
+    TMP_SCRIPT="/tmp/springboot3_$$.sh"
+    if ! curl -fsSL "https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3" -o "$TMP_SCRIPT"; then
+        echo "${RED}Failed to download installer${NC}" >&2
+        rm -f "$TMP_SCRIPT" 2>/dev/null
+        exit 1
+    fi
+
+    chmod 755 "$TMP_SCRIPT" || {
+        echo "${RED}chmod failed${NC}" >&2
+        rm -f "$TMP_SCRIPT"
+        exit 1
+    }
+
+    if cp "$TMP_SCRIPT" "$INSTALL_PATH" 2>/dev/null; then
+        echo "${GREEN}Installed to $INSTALL_PATH${NC}"
+        rm -f "$TMP_SCRIPT"
+        
+        if ! $NEEDS_SUDO && ! in_path; then
+            add_to_bashrc
+            echo ""
+            echo "${YELLOW}→ ~/.local/bin was added to ~/.bashrc${NC}"
+            echo "  To use 'springboot3' immediately in this session run:"
+            echo "    ${GREEN}. ~/.bashrc${NC}"
+            echo "  (or open a new terminal)"
+            echo "  Continuing in current session anyway..."
+        fi
+
+        echo "${GREEN}Proceeding to setup SDKMAN + Java 21 + Maven + Spring Boot 3 demo...${NC}"
+        echo ""
+    else
+        echo "${RED}Failed to install to $INSTALL_PATH${NC}" >&2
+        echo "  Permission denied? Try with sudo."
+        rm -f "$TMP_SCRIPT"
+        exit 1
+    fi
+}
+
+# ────────────────────────────────────────────────
+# Help
+# ────────────────────────────────────────────────
+
+show_help() {
+    cat << 'EOF'
+springboot3 – version 1.0.0
+
+One-command modern Spring Boot 3.x environment setup
+
+Usage:
+  springboot3               Setup tools (if needed) + create + build + run demo
+  springboot3 help          Show this help
+  springboot3 version       Show version
+
+What it does:
+  • Installs itself to ~/.local/bin or /usr/local/bin if missing
+  • Installs SDKMAN! (if not present)
+  • Installs Java 21 (Temurin – LTS, compatible with upcoming Java 25)
+  • Installs Maven 3.9.9
+  • Creates ~/spring-boot-hello-springboot3 (Spring Boot 3.3.5 minimal project)
+  • Builds & runs it[](http://localhost:8080)
+
+Note: First time SDKMAN is installed, you may need to run
+      . "$HOME/.sdkman/bin/sdkman-init.sh"  or open new terminal
+      before 'sdk' command becomes available in current session.
+
+EOF
+}
+
+# ────────────────────────────────────────────────
+# Argument parsing
+# ────────────────────────────────────────────────
+
+COMMAND="run"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        version) COMMAND="version"; shift ;;
+        help)    COMMAND="help";    shift ;;
+        *)       echo "${RED}Unknown argument: $1${NC}" >&2
+                 echo "Try: springboot3 help"
+                 exit 1 ;;
+    esac
+done
+
+# ────────────────────────────────────────────────
+# Install if missing → then continue anyway
+# ────────────────────────────────────────────────
+
+if ! is_installed; then
+    install_self
+fi
+
+# ────────────────────────────────────────────────
+# Execute requested command
+# ────────────────────────────────────────────────
+
+case "$COMMAND" in
+    version)
+        echo "springboot3 version $VERSION"
+        exit 0
+        ;;
+
+    help)
+        show_help
+        exit 0
+        ;;
+
+    run) : ;;  # continue to setup & run
+    *)
+        echo "${RED}Invalid command${NC}" >&2
+        exit 1
+        ;;
+esac
+
+# ────────────────────────────────────────────────
+# Main payload: SDKMAN + Java 21 + Maven + Spring Boot 3 demo
+# ────────────────────────────────────────────────
+
+echo ""
+echo "=============================================================="
+echo "  springboot3  –  SDKMAN + Java 21 + Maven + Spring Boot 3.3"
+echo "=============================================================="
+echo ""
+
+# 1. SDKMAN
+echo "→ Checking SDKMAN..."
+if [ -d "$HOME/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
+    echo "   Already installed."
+else
+    echo "   Installing SDKMAN..."
+    curl -s "https://get.sdkman.io" | bash
+    [ $? -ne 0 ] && { echo "${RED}SDKMAN install failed${NC}"; exit 1; }
+
+    echo "   Loading SDKMAN in current session..."
+    if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+        . "$HOME/.sdkman/bin/sdkman-init.sh"
+    else
+        echo "${YELLOW}Warning: sdkman-init.sh not found${NC}"
+    fi
+fi
+
+if ! command -v sdk >/dev/null 2>&1; then
+    echo ""
+    echo "${YELLOW}sdk command is still not available in this session.${NC}"
+    echo "This is normal on first SDKMAN install."
+    echo ""
+    echo "Please run one of these, then re-execute 'springboot3':"
+    echo "  ${GREEN}. \"\$HOME/.sdkman/bin/sdkman-init.sh\"${NC}"
+    echo "  ${GREEN}. ~/.bashrc${NC}"
+    echo "  or open a new terminal / tab"
+    echo ""
+    exit 1
+fi
+
+echo "   SDKMAN ready."
+sdk version | head -n 1
+
+# 2. Java 21 (Temurin – current LTS, change to 25-tem when available)
+echo ""
+echo "→ Installing Java 21 (Temurin)..."
+
+sdk install java 21.0.6-tem </dev/null || {
+    echo "${RED}Failed to install Java 21 Temurin${NC}"
+    echo "Run 'sdk list java' to see available versions"
+    exit 1
+}
+
+sdk default java 21.0.6-tem >/dev/null 2>&1
+sdk use   java 21.0.6-tem >/dev/null 2>&1 || true
+
+java -version 2>&1 | head -n 1 || {
+    echo "${RED}java command not found after install${NC}"
+    exit 1
+}
+
+# 3. Maven
+echo ""
+echo "→ Installing Maven 3.9.9..."
+
+sdk install maven 3.9.9 </dev/null || {
+    echo "${RED}Failed to install Maven 3.9.9${NC}"
+    exit 1
+}
+
+sdk default maven 3.9.9 >/dev/null 2>&1
+sdk use   maven 3.9.9 >/dev/null 2>&1 || true
+
+mvn --version | head -n 3 || {
+    echo "${RED}mvn command not found${NC}"
+    exit 1
+}
+
+# 4. Create minimal Spring Boot 3.3.5 project
+echo ""
+echo "→ Creating minimal Spring Boot 3.3.5 project..."
+
+PROJECT_DIR="$HOME/spring-boot-hello-springboot3"
+
+[ -d "$PROJECT_DIR" ] && {
+    echo "   Removing previous project folder..."
+    rm -rf "$PROJECT_DIR"
+}
+
+mkdir -p "$PROJECT_DIR"
+cd "$PROJECT_DIR" || exit 1
+
+cat > pom.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>hello-springboot3</artifactId>
+    <version>0.0.1</version>
+    <packaging>jar</packaging>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+    </parent>
+
+    <properties>
+        <java.version>21</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+EOF
+
+mkdir -p src/main/java/com/example
+cat > src/main/java/com/example/HelloApplication.java << 'EOF'
+package com.example;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@SpringBootApplication
+@RestController
+public class HelloApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(HelloApplication.class, args);
+    }
+
+    @GetMapping("/")
+    public String home() {
+        return """
+               Hello from Spring Boot 3.3.5!
+               Running on Java 21 (ready for Java 25)
+               """;
+    }
+}
+EOF
+
+mkdir -p src/main/resources
+cat > src/main/resources/application.properties << 'EOF'
+server.port=8080
+server.address=0.0.0.0
+EOF
+
+echo "   Project created in: $PROJECT_DIR"
+
+# 5. Build & run
+echo ""
+echo "→ Building application..."
+
+mvn clean package -DskipTests || {
+    echo "${RED}Build failed${NC}"
+    echo "You can try: cd $PROJECT_DIR && mvn clean package"
+    exit 1
+}
+
+echo ""
+echo "=============================================================="
+echo "  Spring Boot 3.3.5 app is starting..."
+echo "  → Open: http://localhost:8080"
+echo "  → Press Ctrl+C to stop"
+echo "=============================================================="
+echo ""
+
+java -jar target/hello-springboot3-0.0.1.jar
