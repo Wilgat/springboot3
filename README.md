@@ -107,7 +107,7 @@ This tiny script removes 90% of the "but on my machine it's Java 8…" friction 
 Ideas welcome:
 
 - `--java=25` / `--java=21-tem` / `--java=latest`
-- `--spring-boot-version=3.3.5` (when released)
+- `--spring-boot-version=3.3.5` (when released)git 
 - `--gradle` mode
 - `--port=8080` / `--project-dir=/custom/path`
 - `--no-run` / `--only-setup`
