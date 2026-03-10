@@ -1,19 +1,19 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.11
+#  springboot3 – version 1.0.12
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
-#    • Installs Java 21 (Temurin) – compatible with Java 25 when available
+#    • Installs Java 25 (Temurin)
 #    • Installs latest Maven 3.9.x
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.11"
+VERSION="1.0.12"
 APP=springboot3
 GITUSER=Wilgat
-JAVA_MAIN_VER=21
+JAVA_MAIN_VER=25
 JAVA_BRAND=Temurin
 JAVA_ID=$JAVA_MAIN_VER-tem
 MAVEN_VER=3.9.13
@@ -143,7 +143,7 @@ install_self() {
             echo "  Continuing in current session anyway..."
         fi
 
-        echo "${GREEN}Proceeding to setup SDKMAN + Java 8 Corretto + Maven + Spring Boot 2.7 demo...${NC}"
+        echo "${GREEN}Proceeding to setup SDKMAN + Java + Maven + Spring Boot demo...${NC}"
         echo ""
     else
         echo "${RED}Failed to install to $INSTALL_PATH${NC}" >&2
@@ -171,7 +171,7 @@ Usage:
 What it does:
   • Installs itself to ~/.local/bin or /usr/local/bin if missing
   • Installs SDKMAN! (if not present)
-  • Installs Java 8 (Amazon Corretto)
+  • Installs Java ${JAVA_MAIN_VER} (${JAVA_BRAND})
   • Installs Maven $MAVEN_VER
   • Creates ~/$SPRINGBOOT_NAME (Spring Boot $SPRINGBOOT_VER minimal project)
   • Builds & runs it[](http://localhost:$PORT)
@@ -186,7 +186,7 @@ EOF
 # ────────────────────────────────────────────────
 # Argument parsing
 # ────────────────────────────────────────────────
-argument_pasing() {
+argument_parsing() {
     while [ $# -gt 0 ]; do
         case "$1" in
             version) COMMAND="version"; shift ;;
@@ -233,12 +233,12 @@ execute_command() {
 
 
 # ────────────────────────────────────────────────
-# Main payload: SDKMAN + Java 8 Corretto + Maven + Spring Boot 2.7 demo
+# Main payload: SDKMAN + Java  + Maven + Spring Boot demo
 # ────────────────────────────────────────────────
 main_payload() {
     echo ""
     echo "=============================================================="
-    echo "  $APP  –  SDKMAN + Java 8 Corretto + Maven + Spring Boot 2.7"
+    echo "  $APP  –  SDKMAN + Java + Maven + Spring Boot"
     echo "=============================================================="
     echo ""
 }
@@ -286,13 +286,13 @@ setup_sdkman() {
 # ────────────────────────────────────────────────
 # Setup Java 
 # ────────────────────────────────────────────────
-# 2. Java 8 Amazon Corretto
+# 2. Java 
 setup_java() {
     echo ""
-    echo "→ Installing Java 8 ($JAVA_BRAND)..."
+    echo "→ Installing Java $JAVA_MAIN_VER ($JAVA_BRAND)..."
 
     sdk install java $JAVA_ID </dev/null || {
-        echo "${RED}Failed to install Java 8 $JAVA_BRAND${NC}"
+        echo "${RED}Failed to install Java ${JAVA_MAIN_VER} $JAVA_BRAND${NC}"
         echo "Run 'sdk list java' to see available versions"
         exit 1
     }
@@ -342,7 +342,7 @@ setup_maven() {
 # ────────────────────────────────────────────────
 # Setup Spring Boot
 # ────────────────────────────────────────────────
-# 4. Create minimal Spring Boot 2.7 project
+# 4. Create minimal Spring Boot project
 
 create_pom_xml() {
     mkdir -p "$PROJECT_DIR"
@@ -368,7 +368,7 @@ create_pom_xml() {
     </parent>
 
     <properties>
-        <java.version>1.8</java.version>
+        <java.version>${JAVA_MAIN_VER}</java.version>
     </properties>
 
     <dependencies>
@@ -421,7 +421,7 @@ public class ${CLASS_NAME} {
     @GetMapping("/")
     public String home() {
         return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>\\n" +
-               "Running on Java ${JAVA_MAIN_VER} (Amazon Corretto)<br/>\\n";
+               "Running on Java ${JAVA_MAIN_VER} (${JAVA_BRAND})<br/>\\n";
     }
 }
 EOF
@@ -504,7 +504,7 @@ build_and_run() {
 }
 
 main() {
-    argument_pasing
+    argument_parsing
     check_is_installed
     execute_command
     main_payload
