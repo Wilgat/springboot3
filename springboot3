@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.4
+#  springboot3 – version 1.0.5
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.4"
+VERSION="1.0.5"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -18,6 +18,9 @@ JAVA_BRAND=Temurin
 JAVA_ID=$JAVA_MAIN_VER-tem
 MAVEN_VER=3.9.12
 ARTIFACT_ID=hello-$APP
+CLASS_NAME=HelloApplication
+CLASS_PATH=${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}
+CLASS_FILE=$CLASS_PATH/$CLASS_NAME.java
 ARTIFACT_VER=0.0.1
 JAR_NAME=$ARTIFACT_ID-$ARTIFACT_VER.jar
 SPRINGBOOT_VER=3.3.5
@@ -356,8 +359,8 @@ cat > pom.xml << EOF
 </project>
 EOF
 
-mkdir -p "${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}"
-cat > "${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}/HelloApplication.java" << EOF
+mkdir -p "$CLASS_PATH"
+cat > "$CLASS_FILE" << EOF
 package ${NAMESPACE};
 
 import org.springframework.boot.SpringApplication;
@@ -367,15 +370,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-public class HelloApplication {
+public class $CLASS_NAME {
 
     public static void main(String[] args) {
-        SpringApplication.run(HelloApplication.class, args);
+        SpringApplication.run($CLASS_NAME.class, args);
     }
 
     @GetMapping("/")
     public String home() {
-        return "Hello from Spring Boot ${SPRINGBOOT_VER}!\nRunning on Java ${JAVA_MAIN_VER} (ready for future versions)\n";
+        return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>\n" + 
+               "Running on Java ${JAVA_MAIN_VER} (ready for future versions)<br/>\n";
     }
 }
 EOF
