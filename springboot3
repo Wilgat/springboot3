@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.5
+#  springboot3 – version 1.0.6
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.5"
+VERSION="1.0.6"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -150,7 +150,7 @@ install_self() {
 }
 
 # ────────────────────────────────────────────────
-# Help
+# Help (fixed typo $PRINGBOOT_NAME → $SPRINGBOOT_NAME)
 # ────────────────────────────────────────────────
 
 show_help() {
@@ -169,7 +169,7 @@ What it does:
   • Installs SDKMAN! (if not present)
   • Installs Java $JAVA_MAIN_VER ($JAVA_BRAND – LTS, compatible with upcoming Java 25)
   • Installs Maven $MAVEN_VER
-  • Creates ~/$PRINGBOOT_NAME (Spring Boot $SPRINGBOOT_VER minimal project)
+  • Creates ~/$SPRINGBOOT_NAME (Spring Boot $SPRINGBOOT_VER minimal project)
   • Builds & runs it[](http://localhost:$PORT)
 
 Note: First time SDKMAN is installed, you may need to run
@@ -359,8 +359,18 @@ cat > pom.xml << EOF
 </project>
 EOF
 
-mkdir -p "$CLASS_PATH"
-cat > "$CLASS_FILE" << EOF
+# Check pom.xml after creation
+if [ ! -f "pom.xml" ] || [ ! -s "pom.xml" ]; then
+    echo "${RED}Error: pom.xml was not created or is empty${NC}" >&2
+    exit 1
+fi
+echo "   pom.xml created successfully"
+
+echo ""
+echo "→ Creating class file $CLASS_NAME.java ..."
+echo "→   Location: $PROJECT_DIR"
+mkdir -p "${CLASS_PATH}"
+cat > "${CLASS_FILE}" << EOF
 package ${NAMESPACE};
 
 import org.springframework.boot.SpringApplication;
@@ -378,17 +388,37 @@ public class $CLASS_NAME {
 
     @GetMapping("/")
     public String home() {
-        return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>\n" + 
-               "Running on Java ${JAVA_MAIN_VER} (ready for future versions)<br/>\n";
+        return "Hello from Spring Boot ${SPRINGBOOT_VER}!\\n" +
+               "Running on Java ${JAVA_MAIN_VER} (ready for future versions)\\n";
     }
 }
 EOF
 
-mkdir -p "$RESOURCE_PATH"
-cat > "$RESOURCE_PATH/application.properties" << EOF
+# Check Java class file after creation
+if [ ! -f "${CLASS_FILE}" ] || [ ! -s "${CLASS_FILE}" ]; then
+    echo "${RED}Error: ${CLASS_NAME}.java was not created or is empty${NC}" >&2
+    exit 1
+fi
+echo "   ${CLASS_NAME}.java created successfully"
+
+
+echo ""
+echo "→ Creating properties file application.properties ..."
+echo "→   Location: $RESOURCE_PATH"
+
+mkdir -p "${RESOURCE_PATH}"
+cat > "${RESOURCE_PATH}/application.properties" << EOF
 server.port=${PORT}
 server.address=${BIND_IP}
 EOF
+
+# Check application.properties after creation
+if [ ! -f "${RESOURCE_PATH}/application.properties" ] || [ ! -s "${RESOURCE_PATH}/application.properties" ]; then
+    echo "${RED}Error: application.properties was not created or is empty${NC}" >&2
+    exit 1
+fi
+echo "   application.properties created successfully"
+
 
 echo "   Project created in: $PROJECT_DIR"
 
