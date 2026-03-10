@@ -75,7 +75,7 @@ springboot3
 # → setup everything → create project → build → run on :8080
 
 springboot3 version
-# → springboot3 version 1.0.12
+# → springboot3 version1.0.13
 
 springboot3 help
 # shows this help

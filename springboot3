@@ -1,11 +1,11 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.12
+#  springboot3 – version 1.0.13
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
-#    • Installs Java 25 (Temurin)
+#    • Installs Java 21 (Temurin)
 #    • Installs latest Maven 3.9.x
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
@@ -13,7 +13,7 @@
 VERSION="1.0.12"
 APP=springboot3
 GITUSER=Wilgat
-JAVA_MAIN_VER=25
+JAVA_MAIN_VER=21
 JAVA_BRAND=Temurin
 JAVA_ID=$JAVA_MAIN_VER-tem
 MAVEN_VER=3.9.13
