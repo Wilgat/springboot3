@@ -1,6 +1,6 @@
 # springboot3
 
-<img src="https://img.shields.io/badge/Version-1.0.0-blue?style=flat-square" alt="Version">  
+<img src="https://img.shields.io/badge/Version-1.0.1-blue?style=flat-square" alt="Version">  
 <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21">  
 <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.3">  
 <img src="https://img.shields.io/badge/Maven-3.9.9-red?style=flat-square&logo=apachemaven" alt="Maven 3.9">  
@@ -75,7 +75,7 @@ springboot3
 # → setup everything → create project → build → run on :8080
 
 springboot3 version
-# → springboot3 version 1.0.0
+# → springboot3 version 1.0.1
 
 springboot3 help
 # shows this help
@@ -106,10 +106,10 @@ This tiny script removes 90% of the "but on my machine it's Java 8…" friction 
 
 Ideas welcome:
 
-- `--java=25` / `--java=21.0.7-tem` / `--java=latest`
-- `--spring-boot-version=3.4.0` (when released)
+- `--java=25` / `--java=21-tem` / `--java=latest`
+- `--spring-boot-version=3.3.5` (when released)
 - `--gradle` mode
-- `--port=9000` / `--project-dir=/custom/path`
+- `--port=8080` / `--project-dir=/custom/path`
 - `--no-run` / `--only-setup`
 - Add actuator, security, or test dependencies optionally
 - GitHub Actions for release tagging
