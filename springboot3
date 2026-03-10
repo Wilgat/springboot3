@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.2
+#  springboot3 – version 1.0.3
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -315,26 +315,27 @@ echo "→   Location: $PROJECT_DIR"
 mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR" || exit 1
 
-cat > pom.xml << 'EOF'
+cat > pom.xml << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>$NAMESPACE</groupId>
-    <artifactId>$ARTIFACT_ID</artifactId>
-    <version>$ARTIFACT_VER</version>
+    <groupId>${NAMESPACE}</groupId>
+    <artifactId>${ARTIFACT_ID}</artifactId>
+    <version>${ARTIFACT_VER}</version>
     <packaging>jar</packaging>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>$SPRINGBOOT_VER</version>
+        <version>${SPRINGBOOT_VER}</version>
+        <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
     <properties>
-        <java.version>$JAVA_MAIN_VER</java.version>
+        <java.version>${JAVA_MAIN_VER}</java.version>
     </properties>
 
     <dependencies>
@@ -355,9 +356,9 @@ cat > pom.xml << 'EOF'
 </project>
 EOF
 
-mkdir -p $MAIN_PATH/java/$ORG_TYPE/$ORG_NAME
-cat > $MAIN_PATH/java/$ORG_TYPE/$ORG_NAME/HelloApplication.java << 'EOF'
-package $NAMESPACE;
+mkdir -p "${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}"
+cat > "${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}/HelloApplication.java" << EOF
+package ${NAMESPACE};
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -374,18 +375,18 @@ public class HelloApplication {
 
     @GetMapping("/")
     public String home() {
-        return """
-               Hello from Spring Boot $SPRINGBOOT_VER!
-               Running on Java $JAVA_MAIN_VER (ready for Java 25)
-               """;
+        return \"""
+               Hello from Spring Boot ${SPRINGBOOT_VER}!
+               Running on Java ${JAVA_MAIN_VER} (ready for future versions)
+               \""";
     }
 }
 EOF
 
-mkdir -p $RESOURCE_PATH
-cat > $RESOURCE_PATH/application.properties << 'EOF'
-server.port=$PORT
-server.address=$BIND_IP
+mkdir -p "$RESOURCE_PATH"
+cat > "$RESOURCE_PATH/application.properties" << EOF
+server.port=${PORT}
+server.address=${BIND_IP}
 EOF
 
 echo "   Project created in: $PROJECT_DIR"
