@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.6
+#  springboot3 – version 1.0.7
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.6"
+VERSION="1.0.7"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -19,6 +19,7 @@ JAVA_ID=$JAVA_MAIN_VER-tem
 MAVEN_VER=3.9.12
 ARTIFACT_ID=hello-$APP
 CLASS_NAME=HelloApplication
+MAIN_PATH=src/main
 CLASS_PATH=${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}
 CLASS_FILE=$CLASS_PATH/$CLASS_NAME.java
 ARTIFACT_VER=0.0.1
@@ -28,7 +29,6 @@ SPRINGBOOT_NAME=springboot-$ARTIFACT_ID
 PORT=8080
 BIND_IP=0.0.0.0
 GITUSERCONTENT=https://raw.githubusercontent.com/$GITUSER/$APP/main/$APP
-MAIN_PATH=src/main
 RESOURCE_PATH=$MAIN_PATH/resources
 ORG_TYPE=com
 ORG_NAME=example
