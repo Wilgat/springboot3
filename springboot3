@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.7
+#  springboot3 – version 1.0.8
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.7"
+VERSION="1.0.8"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -388,8 +388,8 @@ public class $CLASS_NAME {
 
     @GetMapping("/")
     public String home() {
-        return "Hello from Spring Boot ${SPRINGBOOT_VER}!\\n" +
-               "Running on Java ${JAVA_MAIN_VER} (ready for future versions)\\n";
+        return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>\\n" +
+               "Running on Java ${JAVA_MAIN_VER} (ready for future versions)<br/>\\n";
     }
 }
 EOF
