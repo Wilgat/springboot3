@@ -30,6 +30,7 @@ RESOURCE_PATH=$MAIN_PATH/resources
 ORG_TYPE=com
 ORG_NAME=example
 NAMESPACE=$ORG_TYPE.$ORG_NAME
+PROJECT_DIR="$HOME/$SPRINGBOOT_NAME"
 
 # Colors
 if [ -t 1 ]; then
@@ -300,10 +301,11 @@ mvn --version | head -n 3 || {
 }
 
 # 4. Create minimal Spring Boot $SPRINGBOOT_VER project
+
 echo ""
 echo "→ Creating minimal Spring Boot $SPRINGBOOT_VER project..."
+echo "→   Location: $PROJECT_DIR"
 
-PROJECT_DIR="$HOME/$PRINGBOOT_NAME"
 
 [ -d "$PROJECT_DIR" ] && {
     echo "   Removing previous project folder..."
