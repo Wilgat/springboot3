@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # ────────────────────────────────────────────────
-#  springboot3 – version 1.0.8
+#  springboot3 – version 1.0.9
 #  One-command installer + launcher for Spring Boot 3.x
 #    • Installs itself if not present
 #    • Installs SDKMAN! if missing
@@ -10,7 +10,7 @@
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
 # ────────────────────────────────────────────────
 
-VERSION="1.0.8"
+VERSION="1.0.9"
 APP=springboot3
 GITUSER=Wilgat
 JAVA_MAIN_VER=21
@@ -281,10 +281,21 @@ sdk install java $JAVA_ID </dev/null || {
 sdk default java $JAVA_ID >/dev/null 2>&1
 sdk use   java $JAVA_ID >/dev/null 2>&1 || true
 
-java -version 2>&1 | head -n 1 || {
-    echo "${RED}java command not found after install${NC}"
-    exit 1
-}
+
+# Prefer SDKMAN java
+JAVA_CMD="$(sdk home java current)/bin/java"
+if [ -x "$JAVA_CMD" ]; then
+    "$JAVA_CMD" -version 2>&1 | head -n 1 || {
+        echo "${RED}java command not found after install${NC}"
+        exit 1
+    }
+else
+    java -version 2>&1 | head -n 1 || {
+        echo "${RED}java command not found after install${NC}"
+        exit 1
+    }
+fi
+
 
 # 3. Maven
 echo ""
@@ -440,4 +451,9 @@ echo "  → Press Ctrl+C to stop"
 echo "=============================================================="
 echo ""
 
-java -jar target/$JAR_NAME
+# Prefer SDKMAN java
+if [ -x "$JAVA_CMD" ]; then
+    "$JAVA_CMD" -jar target/"$JAR_NAME"
+else
+    java -jar target/"$JAR_NAME"
+fi

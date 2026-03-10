@@ -1,6 +1,6 @@
 # springboot3
 
-<img src="https://img.shields.io/badge/Version-1.0.8-blue?style=flat-square" alt="Version">  
+<img src="https://img.shields.io/badge/Version-1.0.10-blue?style=flat-square" alt="Version">  
 <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21">  
 <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.3">  
 <img src="https://img.shields.io/badge/Maven-3.9.9-red?style=flat-square&logo=apachemaven" alt="Maven 3.9">  
@@ -75,7 +75,7 @@ springboot3
 # → setup everything → create project → build → run on :8080
 
 springboot3 version
-# → springboot3 version 1.0.8
+# → springboot3 version 1.0.10
 
 springboot3 help
 # shows this help
