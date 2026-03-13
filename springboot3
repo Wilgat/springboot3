@@ -1,74 +1,83 @@
-#!/bin/sh
-
-# ────────────────────────────────────────────────
-#  springboot3 – version 1.0.13
+#!/bin/bash
+# ────────────────────────────────────────────────────────────────
+#  springboot3 – version 1.0.14
 #  One-command installer + launcher for Spring Boot 3.x
-#    • Installs itself if not present
-#    • Installs SDKMAN! if missing
-#    • Installs Java 21 (Temurin)
-#    • Installs latest Maven 3.9.x
+#
+#  Installs (if needed):
+#    • itself (~/.local/bin or /usr/local/bin)
+#    • SDKMAN!
+#    • Java 21 (Temurin)
+#    • Maven 3.9.9
 #    • Creates & runs minimal Spring Boot 3.3.5 Hello World
-# ────────────────────────────────────────────────
+#
+#  One-liner install (recommended):
+#    curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash
+#    sudo curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash
+# ────────────────────────────────────────────────────────────────
 
-VERSION="1.0.12"
-APP=springboot3
-GITUSER=Wilgat
+# ─── Constants ───────────────────────────────────────────────────
+
+APP_NAME="springboot3"
+APP_VERSION="1.0.14"
+
+GLOBAL_BIN="/usr/local/bin"
+USER_BIN="${HOME}/.local/bin"
+
+SCRIPT_REPO_USER="Wilgat"
+SCRIPT_REPO_NAME="${APP_NAME}"
+SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO_USER}/${SCRIPT_REPO_NAME}/main/${APP_NAME}"
+
+# Tool versions
 JAVA_MAIN_VER=21
-JAVA_BRAND=Temurin
-JAVA_ID=$JAVA_MAIN_VER-tem
-MAVEN_VER=3.9.13
-ARTIFACT_ID=hello-$APP
-CLASS_NAME=HelloApplication
-MAIN_PATH=src/main
-CLASS_PATH=${MAIN_PATH}/java/${ORG_TYPE}/${ORG_NAME}
-CLASS_FILE=$CLASS_PATH/$CLASS_NAME.java
-ARTIFACT_VER=0.0.1
-JAR_NAME=$ARTIFACT_ID-$ARTIFACT_VER.jar
-SPRINGBOOT_VER=3.3.5
-SPRINGBOOT_NAME=springboot-$ARTIFACT_ID
-PORT=8080
-BIND_IP=0.0.0.0
-GITUSERCONTENT=https://raw.githubusercontent.com/$GITUSER/$APP/main/$APP
-RESOURCE_PATH=$MAIN_PATH/resources
-ORG_TYPE=com
-ORG_NAME=example
-NAMESPACE=$ORG_TYPE.$ORG_NAME
-PROJECT_DIR="$HOME/$SPRINGBOOT_NAME"
+JAVA_DISTRIBUTION="temurin"
+JAVA_SDK_ID="${JAVA_MAIN_VER}-${JAVA_DISTRIBUTION}"
 
-# Default Command
-COMMAND="run"
-JAVA_CMD=""
+MAVEN_VERSION="3.9.9"
 
-# Colors
+SPRING_BOOT_VERSION="3.3.5"
+PROJECT_NAME="springboot-hello-${APP_NAME}"
+PROJECT_DIR="${HOME}/${PROJECT_NAME}"
+
+SERVER_PORT=8080
+SERVER_BIND="0.0.0.0"
+
+GROUP_ID="com.example"
+ARTIFACT_ID="hello-${APP_NAME}"
+MAIN_CLASS="HelloApplication"
+JAR_NAME="${ARTIFACT_ID}-0.0.1.jar"
+
+# ─── Colors (only when terminal) ─────────────────────────────────
+
 if [ -t 1 ]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    RED='\033[0;31m'
-    NC='\033[0m'
+    C_GREEN='\033[0;32m'
+    C_YELLOW='\033[1;33m'
+    C_RED='\033[0;31m'
+    C_RESET='\033[0m'
 else
-    GREEN='' YELLOW='' RED='' NC=''
+    C_GREEN='' C_YELLOW='' C_RED='' C_RESET=''
 fi
 
-# ────────────────────────────────────────────────
-# Installation path logic
-# ────────────────────────────────────────────────
+# ─── Install location logic ──────────────────────────────────────
 
 if [ "$(id -u)" -eq 0 ]; then
-    INSTALL_DIR="/usr/local/bin"
-    INSTALL_PATH="$INSTALL_DIR/$APP"
-    NEEDS_SUDO=false
+    IS_ROOT=1
+    INSTALL_DIR="${GLOBAL_BIN}"
 else
-    INSTALL_DIR="${HOME}/.local/bin"
-    INSTALL_PATH="$INSTALL_DIR/$APP"
-    NEEDS_SUDO=true
+    IS_ROOT=0
+    INSTALL_DIR="${USER_BIN}"
 fi
 
-# ────────────────────────────────────────────────
-# Helpers
-# ────────────────────────────────────────────────
+INSTALL_PATH="${INSTALL_DIR}/${APP_NAME}"
+
+# ─── Helper functions ────────────────────────────────────────────
 
 is_installed() {
-    [ -f "$INSTALL_PATH" ] && [ -x "$INSTALL_PATH" ]
+    if [ "$IS_ROOT" -eq 1 ]; then
+        [ -f "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ]
+    else
+        { [ -f "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; } ||
+        { [ -f "${USER_BIN}/${APP_NAME}"   ] && [ -x "${USER_BIN}/${APP_NAME}"   ]; }
+    fi
 }
 
 in_path() {
@@ -82,289 +91,211 @@ add_to_bashrc() {
     local bashrc="${HOME}/.bashrc"
     local line="export PATH=\"\$HOME/.local/bin:\$PATH\""
 
-    if [ -f "$bashrc" ] && grep -qF "$line" "$bashrc" 2>/dev/null; then
-        return
-    fi
+    [ -f "$bashrc" ] && grep -qF "$line" "$bashrc" 2>/dev/null && return 0
 
-    echo "" >> "$bashrc"
-    echo "# Added by $APP installer" >> "$bashrc"
-    echo "$line" >> "$bashrc"
-    echo "${YELLOW}→ Added ~/.local/bin to PATH in ~/.bashrc${NC}"
+    printf "\n"                          >> "$bashrc"
+    printf "# Added by %s installer\n" "$APP_NAME" >> "$bashrc"
+    printf "%s\n" "$line"                >> "$bashrc"
+
+    printf "${C_YELLOW}→ Added ~/.local/bin to PATH in ~/.bashrc${C_RESET}\n"
 }
 
-# ────────────────────────────────────────────────
-# Self-install logic – continues after install
-# ────────────────────────────────────────────────
+perform_self_install() {
+    printf "\n${C_YELLOW}%s not found → installing...${C_RESET}\n\n" "$APP_NAME"
 
-install_self() {
-    echo ""
-    echo "${YELLOW}$APP not found → installing...${NC}"
-    echo ""
-
-    if $NEEDS_SUDO; then
-        echo "Recommended install command (use bash explicitly):"
-        echo "  ${GREEN}sudo curl -fsSL $GITUSERCONTENT | sudo bash${NC}"
+    if [ "$IS_ROOT" -eq 1 ]; then
+        printf "Recommended install command:\n"
+        printf "  ${C_GREEN}sudo curl -fsSL %s | sudo bash${C_RESET}\n\n" "$SCRIPT_URL"
     else
-        echo "Recommended install command (use bash explicitly):"
-        echo "  ${GREEN}curl -fsSL $GITUSERCONTENT | bash${NC}"
+        printf "Recommended install command:\n"
+        printf "  ${C_GREEN}curl -fsSL %s | bash${C_RESET}\n\n" "$SCRIPT_URL"
     fi
 
-    echo ""
-
-    mkdir -p "$INSTALL_DIR" 2>/dev/null || {
-        echo "${RED}Cannot create directory $INSTALL_DIR${NC}" >&2
+    mkdir -p "${INSTALL_DIR}" 2>/dev/null || {
+        printf "${C_RED}Cannot create directory %s${C_RESET}\n" "${INSTALL_DIR}" >&2
         exit 1
     }
 
-    TMP_SCRIPT="/tmp/$APP_$$.sh"
-    if ! curl -fsSL "$GITUSERCONTENT" -o "$TMP_SCRIPT"; then
-        echo "${RED}Failed to download installer${NC}" >&2
-        rm -f "$TMP_SCRIPT" 2>/dev/null
-        exit 1
-    fi
-
-    chmod 755 "$TMP_SCRIPT" || {
-        echo "${RED}chmod failed${NC}" >&2
-        rm -f "$TMP_SCRIPT"
+    local tmp
+    tmp=$(mktemp "/tmp/${APP_NAME}.XXXXXXXX") || {
+        printf "${C_RED}mktemp failed${C_RESET}\n" >&2
         exit 1
     }
 
-    if cp "$TMP_SCRIPT" "$INSTALL_PATH" 2>/dev/null; then
-        echo "${GREEN}Installed to $INSTALL_PATH${NC}"
-        rm -f "$TMP_SCRIPT"
-        
-        if ! $NEEDS_SUDO && ! in_path; then
-            add_to_bashrc
-            echo ""
-            echo "${YELLOW}→ ~/.local/bin was added to ~/.bashrc${NC}"
-            echo "  To use '$APP' immediately in this session run:"
-            echo "    ${GREEN}. ~/.bashrc${NC}"
-            echo "  (or open a new terminal)"
-            echo "  Continuing in current session anyway..."
-        fi
-
-        echo "${GREEN}Proceeding to setup SDKMAN + Java + Maven + Spring Boot demo...${NC}"
-        echo ""
-    else
-        echo "${RED}Failed to install to $INSTALL_PATH${NC}" >&2
-        echo "  Permission denied? Try with sudo."
-        rm -f "$TMP_SCRIPT"
+    if ! curl -fsSL "$SCRIPT_URL" -o "$tmp"; then
+        printf "${C_RED}Failed to download script${C_RESET}\n" >&2
+        rm -f "$tmp"
         exit 1
     fi
+
+    chmod 755 "$tmp" || {
+        printf "${C_RED}chmod failed${C_RESET}\n" >&2
+        rm -f "$tmp"
+        exit 1
+    }
+
+    if mv "$tmp" "$INSTALL_PATH" 2>/dev/null; then
+        printf "${C_GREEN}Installed to %s${C_RESET}\n" "$INSTALL_PATH"
+    else
+        printf "${C_RED}Failed to install to %s${C_RESET}\n" "$INSTALL_PATH" >&2
+        printf "Permission denied? Try with sudo.\n"
+        rm -f "$tmp"
+        exit 1
+    fi
+
+    if [ "$IS_ROOT" -eq 0 ] && ! in_path; then
+        add_to_bashrc
+        printf "\n"
+        printf "${C_YELLOW}Important:${C_RESET} ~/.local/bin was not in your PATH.\n"
+        printf "          We added it to ~/.bashrc.\n\n"
+        printf "          Please run one of these now:\n"
+        printf "            ${C_GREEN}. ~/.bashrc${C_RESET}\n"
+        printf "          or open a new terminal.\n\n"
+        printf "Continuing in current session anyway...\n\n"
+    fi
+
+    printf "${C_GREEN}Proceeding with SDKMAN + Java + Maven + demo setup...${C_RESET}\n\n"
 }
 
-# ────────────────────────────────────────────────
-# Help
-# ────────────────────────────────────────────────
+maybe_self_install() {
+    is_installed && return 0
+    perform_self_install
+}
 
 show_help() {
-    cat << 'EOF'
-$APP – version $VERSION
+    cat <<EOF
+${APP_NAME} – version ${APP_VERSION}
 
-One-command Spring Boot 2.7.x (last 2.x LTS) environment setup
+One-command Spring Boot 3.x environment setup + minimal demo
 
 Usage:
-  $APP               Setup tools (if needed) + create + build + run demo
-  $APP help          Show this help
-  $APP version       Show version
+  ${APP_NAME}               Setup tools (if needed) + create + build + run demo
+  ${APP_NAME} help          Show this help
+  ${APP_NAME} version       Show version
 
 What it does:
-  • Installs itself to ~/.local/bin or /usr/local/bin if missing
-  • Installs SDKMAN! (if not present)
-  • Installs Java ${JAVA_MAIN_VER} (${JAVA_BRAND})
-  • Installs Maven $MAVEN_VER
-  • Creates ~/$SPRINGBOOT_NAME (Spring Boot $SPRINGBOOT_VER minimal project)
-  • Builds & runs it[](http://localhost:$PORT)
+  • Installs itself to ~/.local/bin (or /usr/local/bin if root)
+  • Installs SDKMAN! (if missing)
+  • Installs Java ${JAVA_MAIN_VER} (${JAVA_DISTRIBUTION})
+  • Installs Maven ${MAVEN_VERSION}
+  • Creates ~/${PROJECT_NAME} (minimal Spring Boot ${SPRING_BOOT_VERSION} project)
+  • Builds & runs it → open http://localhost:${SERVER_PORT}
 
-Note: First time SDKMAN is installed, you may need to run
-      . "$HOME/.sdkman/bin/sdkman-init.sh"  or open new terminal
-      before 'sdk' command becomes available in current session.
+Note: After first SDKMAN install you may need to run
+      . "\$HOME/.sdkman/bin/sdkman-init.sh"
+      or open a new terminal before 'sdk' works in current session.
 
 EOF
 }
 
-# ────────────────────────────────────────────────
-# Argument parsing
-# ────────────────────────────────────────────────
-argument_parsing() {
+parse_arguments() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            version) COMMAND="version"; shift ;;
-            help)    COMMAND="help";    shift ;;
-            *)       echo "${RED}Unknown argument: $1${NC}" >&2
-                    echo "Try: $APP help"
-                    exit 1 ;;
+            help|--help|-h)     show_help; exit 0 ;;
+            version|--version)  printf "%s version %s\n" "$APP_NAME" "$APP_VERSION"; exit 0 ;;
+            *)  printf "${C_RED}Unknown argument: %s${C_RESET}\n" "$1" >&2
+                printf "Try: %s help\n" "$APP_NAME"
+                exit 1 ;;
         esac
     done
 }
 
-# ────────────────────────────────────────────────
-# Install if missing → then continue anyway
-# ────────────────────────────────────────────────
-check_is_installed() {
-    if ! is_installed; then
-        install_self
-    fi
-}
-
-
-# ────────────────────────────────────────────────
-# Execute requested command
-# ────────────────────────────────────────────────
-execute_command() {
-    case "$COMMAND" in
-        version)
-            echo "$APP version $VERSION"
-            exit 0
-            ;;
-
-        help)
-            show_help
-            exit 0
-            ;;
-
-        run) : ;;  # continue to setup & run
-        *)
-            echo "${RED}Invalid command${NC}" >&2
-            exit 1
-            ;;
-    esac
-}
-
-
-# ────────────────────────────────────────────────
-# Main payload: SDKMAN + Java  + Maven + Spring Boot demo
-# ────────────────────────────────────────────────
-main_payload() {
-    echo ""
-    echo "=============================================================="
-    echo "  $APP  –  SDKMAN + Java + Maven + Spring Boot"
-    echo "=============================================================="
-    echo ""
-}
-
-# ────────────────────────────────────────────────
-# Setup SDKMAN 
-# ────────────────────────────────────────────────
 setup_sdkman() {
-    # 1. SDKMAN
-    echo "→ Checking SDKMAN..."
-    if [ -d "$HOME/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
-        echo "   Already installed."
+    printf "→ Checking SDKMAN...\n"
+    if [ -d "${HOME}/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
+        printf "   Already installed.\n"
     else
-        echo "   Installing SDKMAN..."
+        printf "   Installing SDKMAN...\n"
         curl -s "https://get.sdkman.io" | bash
-        [ $? -ne 0 ] && { echo "${RED}SDKMAN install failed${NC}"; exit 1; }
+        [ $? -ne 0 ] && { printf "${C_RED}SDKMAN install failed${C_RESET}\n"; exit 1; }
 
-        echo "   Loading SDKMAN in current session..."
-        if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
-            . "$HOME/.sdkman/bin/sdkman-init.sh"
-        else
-            echo "${YELLOW}Warning: sdkman-init.sh not found${NC}"
-        fi
+        # shellcheck disable=SC1091
+        [ -s "${HOME}/.sdkman/bin/sdkman-init.sh" ] && . "${HOME}/.sdkman/bin/sdkman-init.sh"
     fi
 
     if ! command -v sdk >/dev/null 2>&1; then
-        echo ""
-        echo "${YELLOW}sdk command is still not available in this session.${NC}"
-        echo "This is normal on first SDKMAN install."
-        echo ""
-        echo "Please run one of these, then re-execute '$APP':"
-        echo "  ${GREEN}. \"\$HOME/.sdkman/bin/sdkman-init.sh\"${NC}"
-        echo "  ${GREEN}. ~/.bashrc${NC}"
-        echo "  or open a new terminal / tab"
-        echo ""
+        printf "\n${C_YELLOW}sdk command not available yet in this session.${C_RESET}\n"
+        printf "This is normal after fresh SDKMAN install.\n\n"
+        printf "Please run:\n"
+        printf "  ${C_GREEN}. \"\$HOME/.sdkman/bin/sdkman-init.sh\"${C_RESET}\n"
+        printf "  or open a new terminal,\n"
+        printf "  then re-run %s\n\n" "$APP_NAME"
         exit 1
     fi
 
-    echo "   SDKMAN ready."
+    printf "   SDKMAN ready. "
     sdk version | head -n 1
-
 }
 
-
-# ────────────────────────────────────────────────
-# Setup Java 
-# ────────────────────────────────────────────────
-# 2. Java 
 setup_java() {
-    echo ""
-    echo "→ Installing Java $JAVA_MAIN_VER ($JAVA_BRAND)..."
-
-    sdk install java $JAVA_ID </dev/null || {
-        echo "${RED}Failed to install Java ${JAVA_MAIN_VER} $JAVA_BRAND${NC}"
-        echo "Run 'sdk list java' to see available versions"
+    printf "\n→ Installing Java %s (%s)...\n" "$JAVA_MAIN_VER" "$JAVA_DISTRIBUTION"
+    sdk install java "${JAVA_SDK_ID}" </dev/null || {
+        printf "${C_RED}Failed to install Java %s %s${C_RESET}\n" "$JAVA_MAIN_VER" "$JAVA_DISTRIBUTION"
+        printf "Run 'sdk list java' to see available versions\n"
         exit 1
     }
 
-    sdk default java $JAVA_ID >/dev/null 2>&1
-    sdk use   java $JAVA_ID >/dev/null 2>&1 || true
+    sdk default java "${JAVA_SDK_ID}" >/dev/null 2>&1
+    sdk use java "${JAVA_SDK_ID}" >/dev/null 2>&1 || true
 
-    # Prefer SDKMAN java
-    JAVA_CMD="$(sdk home java current)/bin/java"
-    if [ -x "$JAVA_CMD" ]; then
-        "$JAVA_CMD" -version 2>&1 | head -n 1 || {
-            echo "${RED}java command not found after install${NC}"
-            exit 1
-        }
+    local java_bin
+    java_bin="$(sdk home java current)/bin/java"
+    if [ -x "$java_bin" ]; then
+        "$java_bin" -version 2>&1 | head -n 1
     else
         java -version 2>&1 | head -n 1 || {
-            echo "${RED}java command not found after install${NC}"
+            printf "${C_RED}java command not found after install${C_RESET}\n"
             exit 1
         }
     fi
-
 }
 
-# ────────────────────────────────────────────────
-# Setup Maven 
-# ────────────────────────────────────────────────
-# 3. Maven
 setup_maven() {
-    echo ""
-    echo "→ Installing Maven $MAVEN_VER..."
-
-    sdk install maven $MAVEN_VER </dev/null || {
-        echo "${RED}Failed to install Maven $MAVEN_VER${NC}"
+    printf "\n→ Installing Maven %s...\n" "$MAVEN_VERSION"
+    sdk install maven "${MAVEN_VERSION}" </dev/null || {
+        printf "${C_RED}Failed to install Maven %s${C_RESET}\n" "$MAVEN_VERSION"
         exit 1
     }
 
-    sdk default maven $MAVEN_VER >/dev/null 2>&1
-    sdk use   maven $MAVEN_VER >/dev/null 2>&1 || true
+    sdk default maven "${MAVEN_VERSION}" >/dev/null 2>&1
+    sdk use maven "${MAVEN_VERSION}" >/dev/null 2>&1 || true
 
     mvn --version | head -n 3 || {
-        echo "${RED}mvn command not found${NC}"
+        printf "${C_RED}mvn command not found${C_RESET}\n"
         exit 1
     }
-
 }
 
-# ────────────────────────────────────────────────
-# Setup Spring Boot
-# ────────────────────────────────────────────────
-# 4. Create minimal Spring Boot project
+setup_spring_project() {
+    printf "\n→ Creating minimal Spring Boot %s project...\n" "$SPRING_BOOT_VERSION"
+    printf "   Location: %s\n" "$PROJECT_DIR"
 
-create_pom_xml() {
-    mkdir -p "$PROJECT_DIR"
+    [ -d "$PROJECT_DIR" ] && {
+        printf "   Removing previous project folder...\n"
+        rm -rf "$PROJECT_DIR"
+    }
+
+    mkdir -p "$PROJECT_DIR" || exit 1
     cd "$PROJECT_DIR" || exit 1
 
-    cat > pom.xml << EOF
+    # ── pom.xml ───────────────────────────────────────
+    cat > pom.xml <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>${NAMESPACE}</groupId>
+    <groupId>${GROUP_ID}</groupId>
     <artifactId>${ARTIFACT_ID}</artifactId>
-    <version>${ARTIFACT_VER}</version>
+    <version>0.0.1</version>
     <packaging>jar</packaging>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>${SPRINGBOOT_VER}</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <version>${SPRING_BOOT_VERSION}</version>
+        <relativePath/>
     </parent>
 
     <properties>
@@ -389,21 +320,14 @@ create_pom_xml() {
 </project>
 EOF
 
-    # Check pom.xml
-    if [ ! -f "pom.xml" ] || [ ! -s "pom.xml" ]; then
-        echo "${RED}Error: pom.xml was not created or is empty${NC}" >&2
-        exit 1
-    fi
-    echo "   pom.xml created successfully"
-}
+    # ── Main class ────────────────────────────────────
+    local pkg_dir
+    pkg_dir=$(echo "${GROUP_ID}" | tr '.' '/')
+    local class_path="src/main/java/${pkg_dir}"
+    mkdir -p "${class_path}"
 
-create_classfile() {
-    echo ""
-    echo "→ Creating class file $CLASS_NAME.java ..."
-    echo "→   Location: $PROJECT_DIR"
-    mkdir -p "${CLASS_PATH}"
-    cat > "${CLASS_FILE}" << EOF
-package ${NAMESPACE};
+    cat > "${class_path}/${MAIN_CLASS}.java" <<EOF
+package ${GROUP_ID};
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -412,106 +336,72 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-public class ${CLASS_NAME} {
+public class ${MAIN_CLASS} {
 
     public static void main(String[] args) {
-        SpringApplication.run(${CLASS_NAME}.class, args);
+        SpringApplication.run(${MAIN_CLASS}.class, args);
     }
 
     @GetMapping("/")
     public String home() {
-        return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>\\n" +
-               "Running on Java ${JAVA_MAIN_VER} (${JAVA_BRAND})<br/>\\n";
+        return "Hello from Spring Boot ${SPRING_BOOT_VERSION}!<br>\\n" +
+               "Running on Java ${JAVA_MAIN_VER} (${JAVA_DISTRIBUTION})<br>\\n";
     }
 }
 EOF
 
-    # Check Java class file
-    if [ ! -f "${CLASS_FILE}" ] || [ ! -s "${CLASS_FILE}" ]; then
-        echo "${RED}Error: ${CLASS_NAME}.java was not created or is empty${NC}" >&2
-        exit 1
-    fi
-    echo "   ${CLASS_NAME}.java created successfully"
-
-}
-
-create_properties() {
-    echo ""
-    echo "→ Creating properties file application.properties ..."
-    echo "→   Location: $RESOURCE_PATH"
-
-    mkdir -p "${RESOURCE_PATH}"
-    cat > "${RESOURCE_PATH}/application.properties" << EOF
-server.port=${PORT}
-server.address=${BIND_IP}
+    # ── application.properties ────────────────────────
+    mkdir -p src/main/resources
+    cat > src/main/resources/application.properties <<EOF
+server.port=${SERVER_PORT}
+server.address=${SERVER_BIND}
 EOF
 
-    # Check application.properties
-    if [ ! -f "${RESOURCE_PATH}/application.properties" ] || [ ! -s "${RESOURCE_PATH}/application.properties" ]; then
-        echo "${RED}Error: application.properties was not created or is empty${NC}" >&2
-        exit 1
-    fi
-    echo "   application.properties created successfully"
-
-    echo "   Project created in: $PROJECT_DIR"
+    printf "   Project structure created.\n"
 }
 
-setup_springboot() {
-    echo ""
-    echo "→ Creating minimal Spring Boot $SPRINGBOOT_VER project..."
-    echo "→   Location: $PROJECT_DIR"
-
-    [ -d "$PROJECT_DIR" ] && {
-        echo "   Removing previous project folder..."
-        rm -rf "$PROJECT_DIR"
-    }
-    create_pom_xml
-    create_classfile
-    create_properties
-}
-
-
-
-# ────────────────────────────────────────────────
-# Build & run
-# ────────────────────────────────────────────────
-# 5. Build & run
 build_and_run() {
-    echo ""
-    echo "→ Building application..."
+    printf "\n→ Building application...\n"
 
     mvn clean package -DskipTests || {
-        echo "${RED}Build failed${NC}"
-        echo "You can try: cd \"$PROJECT_DIR\" && mvn clean package"
+        printf "${C_RED}Build failed${C_RESET}\n"
+        printf "You can debug manually:\n"
+        printf "  cd %s && mvn clean package\n" "$PROJECT_DIR"
         exit 1
     }
 
-    echo ""
-    echo "=============================================================="
-    echo "  Spring Boot $SPRINGBOOT_VER app is starting..."
-    echo "  → Open: http://localhost:$PORT"
-    echo "  → Press Ctrl+C to stop"
-    echo "=============================================================="
-    echo ""
+    printf "\n"
+    printf "==============================================================\n"
+    printf "  Spring Boot %s app is starting...\n" "$SPRING_BOOT_VERSION"
+    printf "  → Open: http://localhost:%s\n" "$SERVER_PORT"
+    printf "  → Press Ctrl+C to stop\n"
+    printf "==============================================================\n\n"
 
-    # Prefer SDKMAN java
-    JAVA_CMD="$(sdk home java current)/bin/java"
-    if [ -x "$JAVA_CMD" ]; then
-        "$JAVA_CMD" -jar target/"$JAR_NAME"
+    local java_bin
+    java_bin="$(sdk home java current)/bin/java"
+    if [ -x "$java_bin" ]; then
+        exec "$java_bin" -jar "target/${JAR_NAME}"
     else
-        java -jar target/"$JAR_NAME"
+        exec java -jar "target/${JAR_NAME}"
     fi
 }
 
 main() {
-    argument_parsing
-    check_is_installed
-    execute_command
-    main_payload
+    parse_arguments "$@"
+    maybe_self_install
+
+    cat <<EOF
+==============================================================
+  ${APP_NAME} ${APP_VERSION}  –  Spring Boot ${SPRING_BOOT_VERSION} Quick Start
+==============================================================
+
+EOF
+
     setup_sdkman
     setup_java
     setup_maven
-    setup_springboot
+    setup_spring_project
     build_and_run
 }
-main
+
+main "$@"
