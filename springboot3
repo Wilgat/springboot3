@@ -29,9 +29,8 @@ SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO_USER}/${SCRIPT_REPO_
 
 # Tool versions
 JAVA_MAIN_VER=21
-JAVA_DISTRIBUTION="tem"
-JAVA_ID="21.0.10"
-JAVA_SDK_ID="${JAVA_ID}-${JAVA_DISTRIBUTION}"
+JAVA_DISTRIBUTION="temurin"
+JAVA_SDK_ID="${21.0.10}-tem"
 
 MAVEN_VERSION="3.9.9"
 
