@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# springboot3 – version 1.2.0
+# springboot3 – version 1.3.0
 # =============================================================================
 #
 # One-command installer + launcher for Spring Boot 3.3.5
@@ -88,6 +88,7 @@
 APP_NAME="springboot3"
 VERSION="1.1.0"
 DESCRIPTION="Spring Boot 3.3.5 quick setup"
+REMOTE_VERSION=$VERSION
 
 REPO_USER="Wilgat"
 REPO_NAME="springboot3"
@@ -247,13 +248,13 @@ get_installed_version() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # =============================================================================
+
 version_check() {
     info "Checking latest version of ${APP_NAME}..."
 
-    local remote_version
-    remote_version=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
+    REMOTE_VERSION=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
 
-    if [ -z "$remote_version" ]; then
+    if [ -z "$REMOTE_VERSION" ]; then
         error "Failed to fetch remote version"
         return 1
     fi
@@ -262,29 +263,15 @@ version_check() {
     local_version=$(get_installed_version)
 
     printf "Local version : %s\n" "$local_version"
-    printf "Latest version: %s\n\n" "$remote_version"
+    printf "Latest version: %s\n\n" "$REMOTE_VERSION"
 
-    if [ "$local_version" = "$remote_version" ]; then
+    if [ "$local_version" = "$REMOTE_VERSION" ]; then
         success "You are running the latest version."
         return 0
     elif [ "$local_version" = "not installed" ]; then
         warn "${APP_NAME} is not installed yet."
     else
-        warn "A newer version is available (${remote_version})"
-    fi
-
-    if ! is_installed && [ -t 0 ] && [ -t 1 ]; then
-        printf "\nWould you like to install ${APP_NAME} now? (y/N): "
-        read -r answer || true
-        case "$answer" in
-            [Yy]*|[Yy][Ee][Ss]*)
-                FORCE_REINSTALL=1
-                perform_self_install
-                ;;
-            *)
-                printf "Installation skipped by user.\n"
-                ;;
-        esac
+        warn "A newer version is available (${REMOTE_VERSION})"
     fi
 }
 
@@ -298,13 +285,14 @@ version_check() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # =============================================================================
+
 self_update() {
     info "Starting self-update of ${APP_NAME}..."
 
-    local remote_version
-    remote_version=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
+    local REMOTE_VERSION
+    REMOTE_VERSION=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
 
-    if [ -z "$remote_version" ]; then
+    if [ -z "$REMOTE_VERSION" ]; then
         error "Failed to fetch latest version"
         return 1
     fi
@@ -312,13 +300,13 @@ self_update() {
     local local_version
     local_version=$(get_installed_version)
 
-    if [ "$local_version" = "$remote_version" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
-        success "Already running the latest version (${remote_version})."
+    if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        success "Already running the latest version (${REMOTE_VERSION})."
         return 0
     fi
 
-    if [ "$local_version" != "$remote_version" ]; then
-        info "Updating from ${local_version} → ${remote_version}"
+    if [ "$local_version" != "$REMOTE_VERSION" ]; then
+        info "Updating from ${local_version} → ${REMOTE_VERSION}"
     fi
 
     FORCE_REINSTALL=1
@@ -424,24 +412,24 @@ add_to_shell_path() {
 # =============================================================================
 
 perform_self_install() {
-    info "Starting installation of ${APP_NAME} ${VERSION}..."
+    if [ -z "$REMOTE_VERSION" ]; then
+        REMOTE_VERSION=${VERSION}
+    fi
+    info "Starting installation of ${APP_NAME} ${REMOTE_VERSION}..."
 
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
-        success "${APP_NAME} is already installed. Use --force or --reinstall to override."
+        success "${APP_NAME} is already installed. Use --force to override."
         return 0
     fi
 
-    if [ "$IS_ROOT" -eq 1 ]; then
-        INSTALL_DIR="${GLOBAL_BIN}"
-        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
-    else
-        INSTALL_DIR="${USER_BIN}"
-        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
+    if [ "$IS_ROOT" -eq 0 ]; then
+        die "Self-install requires root privileges. Please run with sudo."
     fi
 
-    if ! mkdir -p "${INSTALL_DIR}" 2>/dev/null; then
-        error "Failed to create ${INSTALL_DIR}"
-        error "Try running with sudo or --user flag"
+    INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+
+    if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
+        error "Failed to create ${GLOBAL_BIN}"
         return 1
     fi
 
@@ -471,7 +459,7 @@ perform_self_install() {
         return 1
     fi
 
-    chmod +x "${tmp_file}" 2>/dev/null || warn "chmod +x failed (common on Git Bash)"
+    chmod +x "${tmp_file}" 2>/dev/null || warn "chmod +x failed"
 
     rm -f "${INSTALL_PATH}" 2>/dev/null
     if ! mv "${tmp_file}" "${INSTALL_PATH}" 2>/dev/null; then
@@ -480,18 +468,7 @@ perform_self_install() {
         return 1
     fi
 
-    success "${APP_NAME} ${VERSION} successfully installed to ${INSTALL_PATH}"
-
-    if [ "$IS_ROOT" -eq 0 ]; then
-        if ! in_path; then
-            add_to_shell_path
-        else
-            success "${APP_NAME} is now available in your PATH"
-        fi
-    else
-        success "You can now run: ${APP_NAME}"
-    fi
-
+    success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
     return 0
 }
 
