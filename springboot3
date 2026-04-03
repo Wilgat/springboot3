@@ -117,7 +117,6 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${PORT:=8080}"
 : "${BIND_IP:=0.0.0.0}"
 
-
 # ----------------------------- Root Detection --------------------------------
 if [ -z "${IS_ROOT:-}" ]; then
     if [ "$(id -u)" -eq 0 ]; then
@@ -173,10 +172,17 @@ step_message() {
 # =============================================================================
 # is_installed() - Robust installation check
 # =============================================================================
+#
+# GENERAL PURPOSE:
+# Checks whether the script is already installed, supporting both root
+# and normal user installations with safe fallbacks.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
+
 is_installed() {
     : "${GLOBAL_BIN:=/usr/local/bin}"
     : "${USER_BIN:=${HOME}/.local/bin}"
-    : "${APP_NAME:=springboot3}"
     : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
 
     if [ -z "${IS_ROOT:-}" ]; then
@@ -203,6 +209,18 @@ is_installed() {
     fi
 }
 
+# =============================================================================
+# get_installed_version() - Extract version from installed binary
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Safely reads the VERSION constant from the installed script.
+# Used by --version-check and --self-update.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other Wilgat projects.
+# =============================================================================
+
 get_installed_version() {
     local bin_path
 
@@ -219,6 +237,16 @@ get_installed_version() {
     fi
 }
 
+# =============================================================================
+# version_check() - Compare local vs remote version + suggest install
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Fetches the latest version from GitHub raw and compares with installed one.
+# If not installed and running in interactive terminal, it suggests installation.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
 version_check() {
     info "Checking latest version of ${APP_NAME}..."
 
@@ -260,6 +288,16 @@ version_check() {
     fi
 }
 
+# =============================================================================
+# self_update() - Perform self-update to latest version
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads and installs the latest version from GitHub.
+# Respects --force and --quiet.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
 self_update() {
     info "Starting self-update of ${APP_NAME}..."
 
@@ -287,12 +325,34 @@ self_update() {
     perform_self_install
 }
 
+# =============================================================================
+# in_path() - Check if a directory is in $PATH
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns 0 if the given directory (default: INSTALL_DIR) is already in $PATH.
+# POSIX-compatible using case statement (works in sh/dash/bash/zsh).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
+
 in_path() {
     case ":${PATH}:" in
         *:"${1:-$USER_BIN}":*) return 0 ;;
         *) return 1 ;;
     esac
 }
+
+# =============================================================================
+# add_to_shell_path() - Multi-shell PATH support (bash + zsh + fish)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Adds ~/.local/bin to the user's shell configuration for bash, zsh, and fish.
+# Works even if the user is currently using a different shell.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
 
 add_to_shell_path() {
     local added=0
@@ -352,6 +412,16 @@ add_to_shell_path() {
         printf "${YELLOW}→ Restart your terminal or run: source ${shell_config}${NC}\n"
     fi
 }
+
+# =============================================================================
+# perform_self_install() - Main self-installation logic
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads and installs ciao to the correct location (global or user-local).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
 
 perform_self_install() {
     info "Starting installation of ${APP_NAME} ${VERSION}..."
@@ -424,6 +494,16 @@ perform_self_install() {
 
     return 0
 }
+
+# =============================================================================
+# maybe_install() - Friendly installation prompt
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Called when ciao is not installed. Shows helpful message and asks for confirmation.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
 
 maybe_install() {
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
