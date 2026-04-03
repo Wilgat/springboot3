@@ -187,11 +187,3 @@ MIT
 ---
 
 **Note**: Spring Boot 3.3.5 is a current stable release (as of April 2026) with active community and commercial support. This tool provides a quick, reproducible way to spin up a minimal Spring Boot 3 + Java 21 application.
-
-```
-
-This README is consistent in tone, structure, and quality with the `springboot2` version. It highlights the new project preservation feature, uses correct badges for Spring Boot 3 / Java 21, and keeps the defensive philosophy prominent.
-
-You can copy-paste this directly into your `springboot3` repository.
-
-Would you like any adjustments (e.g., add a demo section, change wording, or include a screenshot placeholder)?
