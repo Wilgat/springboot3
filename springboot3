@@ -105,8 +105,8 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${ARTIFACT_ID:=hello-${APP_NAME}}"
 : "${CLASS_NAME:=HelloApplication}"
 : "${GROUP_ID:=com.example}"
-: "${VERSION:=0.0.1}"
-: "${JAR_NAME:=${ARTIFACT_ID}-${VERSION}.jar}"
+: "${MVN_PRJ_VERSION:=0.0.1}"
+: "${JAR_NAME:=${ARTIFACT_ID}-${MVN_PRJ_VERSION}.jar}"
 : "${PORT:=8080}"
 : "${BIND_IP:=0.0.0.0}"
 
