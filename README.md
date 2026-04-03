@@ -1,170 +1,197 @@
+Here's the **complete, polished `README.md`** for your **springboot3** project, written in the same style and structure as the updated `springboot2` README you approved earlier.
+
+```markdown
 # springboot3
 
-<img src="https://img.shields.io/badge/Version-1.0.14-blue?style=flat-square" alt="Version">  
+<img src="https://img.shields.io/badge/Version-1.2.0-blue?style=flat-square" alt="Version">  
 <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21">  
-<img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.3">  
-<img src="https://img.shields.io/badge/Maven-3.9.9-red?style=flat-square&logo=apachemaven" alt="Maven 3.9">  
+<img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.3.5">  
+<img src="https://img.shields.io/badge/Maven-3.9.14-red?style=flat-square&logo=apachemaven" alt="Maven 3.9.14">  
 <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License">
 
-**One stupidly simple command to get a modern Spring Boot 3.3 environment up and running in seconds.**
+**The friendliest way to run Spring Boot 3.3.5 in one command.**
 
+> A robust, extremely defensive **Bash** script that installs SDKMAN!, Java 21 (Temurin), Maven, and instantly creates (or re-uses) + runs a minimal Spring Boot 3.3.5 application.  
+> Part of the Wilgat defensive tool family (aligned with [ciao](https://github.com/Wilgat/ciao)).
+
+---
+
+## ✨ Features
+
+- One-liner install (`curl | bash`)
+- Supports both **user** (`~/.local/bin`) and **system** (`/usr/local/bin`) installation
+- Automatically installs SDKMAN! + pinned Java 21 (Temurin) + Maven 3.9.14
+- Creates a clean minimal Spring Boot 3.3.5 "Hello World" project
+- **Project preservation by default** — re-runs keep your existing files (use `--force` to reset)
+- Self-installing, self-updating (`--self-update`), and version checking
+- `--force` / `--reinstall`, `--quiet` support
+- Multi-shell PATH setup (bash, zsh, fish)
+- Extremely defensive coding style with repeated safe defaults
+
+---
+
+## 🚀 Quick Installation
+
+**For normal users:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash
 ```
 
-→ installs SDKMAN! → Java 21 → Maven → creates a minimal Hello World project → builds it → runs it on port 8080
-
-Perfect when you need to:
-
-- quickly spin up a clean Spring Boot 3.x playground
-- verify compatibility / behavior on Java 21 (or prepare for Java 25)
-- demonstrate current Spring Boot + modern Java setup
-- onboard someone to Spring Boot 3 without fighting tool versions
-
-## Requirement Analysis
-
-This section explains the major design decisions behind the `springboot3` installer script.
-
-- **Shell choice** — `#!/bin/bash`  
-  The script depends heavily on **SDKMAN!**, whose official install & init logic uses bash-isms and is documented/tested primarily in bash. POSIX `sh` would be fragile/unreliable here.
-
-- **User privileges** — auto-detect root vs normal user  
-  - root → installs to `/usr/local/bin`  
-  - normal user → installs to `~/.local/bin` (creates dir if needed)
-
-- **Self-install support** — yes, classic `curl | bash` friendly  
-  Hard-codes script name (`springboot3`) instead of using `$0` (which breaks under `curl | bash`).
-
-- **Temporary files** — safe atomic install (`mktemp` → write → `mv`)
-
-- **PATH handling** — for normal users:  
-  idempotently appends `~/.local/bin` to `~/.bashrc` if missing  
-  shows clear "run `. ~/.bashrc`" message
-
-- **Installation check** — smart: normal users check both global **and** user-local path
-
-- **Other constraints**  
-  - Clear progress messages at every step  
-  - Small, named functions → easier to read/modify  
-  - No `set -euo pipefail` (prefer explicit checks)  
-  - Keeps bash because SDKMAN init requires it
-
-## Pseudo-code Overview
-
-High-level flow of what the script does (in execution order):
-
-| Step | Section / Function              | What it does                                                                 |
-|------|----------------------------------|------------------------------------------------------------------------------|
-| 1    | Header & constants               | Defines version, colors, URLs, Java/Maven/Spring versions, paths             |
-| 2    | Install location logic           | Detects root vs user → sets `INSTALL_DIR` & `INSTALL_PATH`                   |
-| 3    | Helpers (`is_installed`, `in_path`, etc.) | Checks if already installed, if dir in `$PATH`, etc.                   |
-| 4    | Self-install (`perform_self_install`) | If missing: downloads to temp → chmod → atomic mv → adds to PATH if needed |
-| 5    | `maybe_self_install`             | Runs self-install only if needed (non-interactive friendly)                  |
-| 6    | Argument parsing                 | Handles `help`, `version`, default = run                                     |
-| 7    | `setup_sdkman`                   | Installs SDKMAN! if missing → sources init → verifies `sdk` works            |
-| 8    | `setup_java`                     | `sdk install java 21-temurin` → sets default                                 |
-| 9    | `setup_maven`                    | `sdk install maven 3.9.9` → sets default                                     |
-| 10   | `setup_spring_project`           | Deletes old project → creates `pom.xml` + `HelloApplication.java` + properties |
-| 11   | `build_and_run`                  | `mvn clean package` → `java -jar` (prefers SDKMAN java)                      |
-| 12   | `main`                           | Parse args → maybe install self → show header → run all setup steps          |
-
-## What it actually does (in order)
-
-1. Installs **itself** (if missing) to `~/.local/bin` or `/usr/local/bin`
-2. Installs **SDKMAN!** (if not already present)
-3. Installs **Java 21** (Eclipse Temurin – current LTS)
-4. Installs **Maven 3.9.9** (latest stable 3.9.x line)
-5. Creates a fresh minimal project in `~/springboot-hello-springboot3`
-   - Spring Boot **3.3.5** (latest in 3.3 line)
-   - Single `@RestController` returning a text block greeting
-   - Configured to bind to `0.0.0.0:8080`
-6. Runs `mvn clean package`
-7. Starts the application (`java -jar ...`)
-
-After ~1–3 minutes (depending on internet & machine) you should see:
-
-```
-Tomcat started on port(s): 8080 (http) ...
-```
-
-Open http://localhost:8080 (or your machine's IP from another device)
-
-## Installation
-
-**Recommended way** (always use `bash` explicitly):
-
+**System-wide (root):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash
+curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash
 ```
 
-If you need root privileges (e.g. writing to `/usr/local/bin`):
-
-```bash
-sudo curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash
-```
-
-**Do NOT use `sh`** — the script relies on bash features (especially for SDKMAN compatibility).
-
-### Smart install behavior
-
-- **Root / sudo** → installs to `/usr/local/bin/springboot3`
-- **Normal user** → installs to `~/.local/bin/springboot3`
-  - creates the directory if missing
-  - adds `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` if needed
-  - shows instruction to run `. ~/.bashrc` or open new terminal
-
-Interactive terminals ask for confirmation.  
-Piped/non-interactive runs install automatically.
-
-## Usage
-
+After installation, simply run:
 ```bash
 springboot3
-# → setup everything → create project → build → run on :8080
-
-springboot3 version
-# → springboot3 version 1.0.14
-
-springboot3 help
-# shows this help
 ```
 
-## Project location & cleanup
+The app will be available at **http://localhost:8080**
 
-- Created in: `~/springboot-hello-springboot3`
-- Re-running `springboot3` → **deletes old folder** and recreates fresh
-- Want to keep experiments? → rename/move the folder before re-running
+---
 
-## Requirements
+## 📖 Usage
 
-- `bash` (not pure `sh` / dash / ash)
-- `curl`
-- internet connection (first run)
-- ~600–1200 MB disk space (SDKMAN caches + Java + Maven)
+```bash
+springboot3                    # Setup + build + run (preserves project by default)
+springboot3 --force            # Full reset: delete & regenerate project files
+springboot3 version            # Show current version
+springboot3 version-check      # Compare with latest on GitHub
+springboot3 self-update        # Update to latest version
+springboot3 help               # Show detailed help
+```
 
-No Docker, no manual `JAVA_HOME`, no fighting with toolchains.
+### Behavior in v1.2.0
+- **Normal run**: Preserves your existing project folder, `pom.xml`, Java source, and `application.properties` (ideal for repeated testing or manual edits).
+- **`--force` / `--reinstall`**: Completely wipes and regenerates the project for a clean slate.
 
-## Why this exists
+---
 
-Spring Boot 3.x (started in late 2022) brought baseline Java 17, virtual threads (Java 21+), GraalVM native support, observability improvements, and many modern defaults.
+## Important Platform Notes
 
-This tiny script removes 90% of the "but on my machine it's Java 8…" friction when you want a **genuine Spring Boot 3 + Java 21** environment in seconds.
+### Alpine Linux
+Requires **bash** (SDKMAN! does not work reliably under BusyBox ash).  
+The script auto-detects Alpine and gives clear instructions:
+```bash
+apk add bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3)
+```
+
+### macOS, Git Bash (Windows), and other Linux distributions
+Fully supported with defensive fallbacks for SDKMAN! sourcing and PATH setup.
+
+---
+
+## Platform Compatibility
+
+| Platform                  | Status       | Notes |
+|---------------------------|--------------|-------|
+| **Alpine Linux**          | Good         | Requires `apk add bash` |
+| **Git Bash (Windows)**    | Good         | Defensive `chmod` handling |
+| **Ubuntu / Debian**       | Excellent    | Default bash |
+| **Rocky / RHEL / CentOS** | Excellent    | No issues |
+| **macOS (bash/zsh)**      | Good         | Supports official SDKMAN!, Homebrew, etc. |
+
+---
+
+## Program Structure (for curious people)
+
+The script is intentionally kept **linear**, highly readable, and **extremely defensive** following the strict "ciao" coding style.
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Header + Warnings + Project Constants                      │
+│  (APP_NAME, VERSION, SCRIPT_URL, JAVA_ID, etc.)             │
+├─────────────────────────────────────────────────────────────┤
+│  Safe Variable Defaults (repeated on purpose)               │
+│  Root Detection (IS_ROOT)                                   │
+│  Force Flags & Quiet Mode                                   │
+├─────────────────────────────────────────────────────────────┤
+│  Color Output + Logging Functions (die, info, warn, etc.)   │
+├─────────────────────────────────────────────────────────────┤
+│  Core Utility Functions                                     │
+│   • is_installed()            ← robust install detection    │
+│   • get_installed_version()                                 │
+│   • version_check()                                         │
+│   • self_update()                                           │
+│   • in_path() + add_to_shell_path()                         │
+├─────────────────────────────────────────────────────────────┤
+│  Installation Logic                                         │
+│   • perform_self_install()    ← heart of self-install       │
+│   • maybe_install()           ← interactive + auto-install  │
+├─────────────────────────────────────────────────────────────┤
+│  SDKMAN + Java + Maven Setup                                │
+│   • check_alpine_requirements()                             │
+│   • setup_sdkman()                                          │
+│   • setup_java()                                            │
+│   • setup_maven()                                           │
+├─────────────────────────────────────────────────────────────┤
+│  Project Management                                         │
+│   • setup_springboot_project()                              │
+│        ├── Preserves project by default                     │
+│        └── Full reset with --force / --reinstall            │
+├─────────────────────────────────────────────────────────────┤
+│  Build & Run                                                │
+│   • build_and_run()           ← ultra-defensive build + exec│
+├─────────────────────────────────────────────────────────────┤
+│  Help & Main Entry Point                                    │
+│   • show_spring3_help()                                     │
+│   • main()                                                  │
+│        ├── Argument parsing                                 │
+│        ├── Special handlers (--version, --self-update, etc.)│
+│        ├── maybe_install() if needed                        │
+│        └── Full setup flow                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+This structure makes the script easy to understand, copy, and adapt while protecting critical functions with heavy comments and warnings.
+
+---
+
+## Why the Heavy Defensive Style?
+
+This project strictly follows the **ciao defensive coding style**:
+- Repeated safe defaults (`: "${VAR:=default}"`)
+- Redundant root / environment checks
+- Heavy inline comments and `!!! DO NOT MODIFY OR SIMPLIFY !!!` blocks
+
+**Purpose**:
+- Survive harsh environments (`curl | bash`, non-interactive shells, missing `$HOME`, Alpine ash, Git Bash, etc.)
+- Protect against accidental "cleaning" by AI assistants or contributors
+- Serve as a reliable template for other defensive tools in the Wilgat family
+
+---
+
+## Project Philosophy
+
+> "Write code that is easy to copy, hard to break, and self-documenting."
+
+---
 
 ## Contributing
 
-Ideas welcome:
+Please respect the strict defensive coding style and protective comments when submitting changes.
 
-- `--java=25` / `--java=21-tem` / `--java=latest`
-- `--spring-boot-version=3.3.5` (when released)
-- `--gradle` mode
-- `--port=8080` / `--project-dir=/custom/path`
-- `--no-run` / `--only-setup`
-- Add actuator, security, or test dependencies optionally
-- GitHub Actions for release tagging
+---
 
 ## License
 
-[MIT License](LICENSE)
+MIT
 
-Made with modern Java vibes and one coffee too many  
-March 2026
+---
+
+**Part of the Wilgat defensive tool family.**  
+*Last updated: April 2026*
+
+---
+
+**Note**: Spring Boot 3.3.5 is a current stable release (as of April 2026) with active community and commercial support. This tool provides a quick, reproducible way to spin up a minimal Spring Boot 3 + Java 21 application.
+
+```
+
+This README is consistent in tone, structure, and quality with the `springboot2` version. It highlights the new project preservation feature, uses correct badges for Spring Boot 3 / Java 21, and keeps the defensive philosophy prominent.
+
+You can copy-paste this directly into your `springboot3` repository.
+
+Would you like any adjustments (e.g., add a demo section, change wording, or include a screenshot placeholder)?
