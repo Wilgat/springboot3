@@ -170,13 +170,18 @@ step_message() {
     STEP=$((STEP + 1))
 }
 
+
 # =============================================================================
 # is_installed() - Robust installation check
 # =============================================================================
 #
 # GENERAL PURPOSE:
-# Checks whether the script is already installed, supporting both root
+# Checks whether ciao is already installed, supporting both root
 # and normal user installations with safe fallbacks.
+#
+# Please don't modify this code for root-only installed
+# You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
+#   this function
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # =============================================================================
@@ -186,14 +191,15 @@ is_installed() {
     : "${USER_BIN:=${HOME}/.local/bin}"
     : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
 
-    if [ -z "${IS_ROOT:-}" ]; then
-        if [ "$(id -u)" -eq 0 ]; then
-            IS_ROOT=1
-        else
-            IS_ROOT=0
-        fi
+    if [ "$(id -u)" -eq 0 ]; then
+        IS_ROOT=1
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        IS_ROOT=0
+        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
     fi
 
+    # Support explicit parameters or force flags
     if [ "${1:-}" = "--user" ] || [ "${FORCE_USER:-0}" -eq 1 ]; then
         [ -f "${USER_BIN}/${APP_NAME}" ] && [ -x "${USER_BIN}/${APP_NAME}" ] && return 0
         return 1
@@ -202,6 +208,7 @@ is_installed() {
         return 1
     fi
 
+    # Main logic
     if [ "$IS_ROOT" -eq 1 ]; then
         [ -f "${INSTALL_PATH}" ] && [ -x "${INSTALL_PATH}" ]
     else
@@ -219,12 +226,10 @@ is_installed() {
 # Used by --version-check and --self-update.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
-# Designed to be reusable in other Wilgat projects.
+# Designed to be reusable in other projects.
 # =============================================================================
-
 get_installed_version() {
     local bin_path
-
     if [ "$IS_ROOT" -eq 1 ] || [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
         bin_path="${GLOBAL_BIN}/${APP_NAME}"
     else
@@ -247,6 +252,7 @@ get_installed_version() {
 # If not installed and running in interactive terminal, it suggests installation.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 version_check() {
@@ -274,7 +280,6 @@ version_check() {
         warn "A newer version is available (${REMOTE_VERSION})"
     fi
 }
-
 # =============================================================================
 # self_update() - Perform self-update to latest version
 # =============================================================================
@@ -284,6 +289,7 @@ version_check() {
 # Respects --force and --quiet.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 self_update() {
@@ -313,7 +319,24 @@ self_update() {
     perform_self_install
 }
 
+# =============================================================================
+# in_path() - Check if a directory is in $PATH
+# =============================================================================
 #
+# GENERAL PURPOSE:
+# Returns 0 if the given directory (default: INSTALL_DIR) is already in $PATH.
+# POSIX-compatible using case statement (works in sh/dash/bash/zsh).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# Designed to be reusable in other projects.
+# =============================================================================
+
+in_path() {
+    case ":${PATH}:" in
+        *:"${1:-$USER_BIN}":*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # =============================================================================
 # add_to_shell_path() - Multi-shell PATH support (bash + zsh + fish)
@@ -391,10 +414,10 @@ add_to_shell_path() {
 # =============================================================================
 #
 # GENERAL PURPOSE:
-# Downloads and installs ciao to the correct location (global or user-local).
+# Downloads and installs the script to the correct location (global or user-local).
 #
 # Please don't modify this code for root-only installed
-# You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
+# You can check [ "$(id -u)" -eq 0 ] before calling / executing 
 #   this function
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
@@ -424,9 +447,17 @@ perform_self_install() {
         return 0
     fi
 
-    if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
-        error "Failed to create ${GLOBAL_BIN}"
-        return 1
+    # Create correct target directory (root vs user)
+    if [ "$IS_ROOT" -eq 1 ]; then
+        if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
+            error "Failed to create ${GLOBAL_BIN}"
+            return 1
+        fi
+    else
+        if ! mkdir -p "${USER_BIN}" 2>/dev/null; then
+            error "Failed to create ${USER_BIN}"
+            return 1
+        fi
     fi
 
     local tmp_file
@@ -464,10 +495,14 @@ perform_self_install() {
         return 1
     fi
 
+    # Add ~/.local/bin to PATH for normal user installs
+    if [ "$IS_ROOT" -eq 0 ]; then
+        add_to_shell_path
+    fi
+    
     success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
     return 0
 }
-
 
 # =============================================================================
 # maybe_install() - Friendly installation prompt
