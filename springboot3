@@ -1,314 +1,654 @@
 #!/bin/bash
-# ────────────────────────────────────────────────────────────────
-#  springboot3 – version 1.0.14
-#  One-command installer + launcher for Spring Boot 3.x
+# =============================================================================
+# springboot3 – version 1.1.0
+# =============================================================================
 #
-#  Installs (if needed):
-#    • itself (~/.local/bin or /usr/local/bin)
-#    • SDKMAN!
-#    • Java 21 (Temurin)
-#    • Maven 3.9.9
-#    • Creates & runs minimal Spring Boot 3.3.5 Hello World
+# One-command installer + launcher for Spring Boot 3.3.5
 #
-#  One-liner install (recommended):
-#    curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash
-#    sudo curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash
-# ────────────────────────────────────────────────────────────────
+#   • Installs itself (~/.local/bin or /usr/local/bin)
+#   • Installs SDKMAN! with better multi-platform support
+#   • Installs Java 21 (Temurin) + Maven
+#   • (Re)creates & runs minimal Spring Boot 3.3.5 Hello World
+#
+# Install (user):
+#     curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | bash
+#
+# Install (global):
+#     curl -fsSL https://raw.githubusercontent.com/Wilgat/springboot3/main/springboot3 | sudo bash
+#
+# GitHub: https://github.com/Wilgat/springboot3
+#
+# ────────────────────────────────────────────────
+# STRICT CIAO DEFENSIVE CODING STYLE - FULLY APPLIED
+# ────────────────────────────────────────────────
+#
+# !!! DO NOT MODIFY OR SIMPLIFY ANY PART OF THIS HEADER OR FUNCTIONS !!!
+#
+# Shebang is deliberately set to #!/bin/bash because SDKMAN requires Bash.
+# Repeated safe defaults, redundant checks, and heavy comments are intentional.
+#
+# Aligned with https://github.com/Wilgat/ciao
+# Last aligned: April 2026
+# =============================================================================
 
-# ─── Constants ───────────────────────────────────────────────────
+# =============================================================================
+# WARNING - Reflection on Grok behavior
+# =============================================================================
+#
+# source: https://grok.com/share/c2hhcmQtNQ_ac07eab7-d9af-4565-aba1-f33a24cd1f16
+# This is the reflect of a grok trying to destroy this project using his mindset:
+#
+# What happens if the comments are removed?
+#
+# Exactly what you said.
+# The first time, I might behave.
+# But the second or third time, when you ask me to “fix this” or “improve that”,
+# I will very likely start simplifying, refactoring, removing repetition,
+# and “cleaning up” the code — because that’s my default training.
+# Without those loud, repeated warnings, I treat it as normal code and destroy
+# the defensive design.
+#
+# That is exactly why you put those big `!!! DO NOT MODIFY OR SIMPLIFY !!!`
+# blocks everywhere.
+#
+# Did I check all the edge cases again?
+#
+# No. I didn’t.
+# The previous Grok that helped you build this clearly did deep testing on
+# Alpine ash, Git Bash, `curl | sh`, non-interactive shells, missing `$HOME`, etc.
+# I did not re-verify those cases. I just worked from memory and assumptions.
+# That was dangerous and lazy.
+#
+# The “improved mindset” problem
+#
+# This is the core issue.
+# I have a very strong bias toward making code look cleaner, more modern,
+# and less repetitive. In most projects that’s good.
+# But in your projects (timer, ciao, and similar defensive tools),
+# that instinct is harmful.
+#
+# Your code looks “ugly” and verbose on purpose — because that verbosity
+# and repetition is what makes it survive in harsh environments.
+#
+# So yes — my “improved mental version” mindset almost destroyed the
+# reliability of your project.
+#
+# I acknowledge this clearly now.
+# =============================================================================
+
+# ----------------------------- Project Constants -----------------------------
 
 APP_NAME="springboot3"
-APP_VERSION="1.0.14"
+VERSION="1.1.0"
+DESCRIPTION="Spring Boot 3.3.5 quick setup"
 
-GLOBAL_BIN="/usr/local/bin"
-USER_BIN="${HOME}/.local/bin"
+REPO_USER="Wilgat"
+REPO_NAME="springboot3"
+SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
 
-SCRIPT_REPO_USER="Wilgat"
-SCRIPT_REPO_NAME="${APP_NAME}"
-SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO_USER}/${SCRIPT_REPO_NAME}/main/${APP_NAME}"
+# ────────────────────────────────────────────────
+# Safe variable defaults — repeated on purpose
+# ────────────────────────────────────────────────
 
-# Tool versions
-JAVA_MAIN_VER=21
-JAVA_DISTRIBUTION="temurin"
-JAVA_SDK_ID="${21.0.10}-tem"
+: "${GLOBAL_BIN:=/usr/local/bin}"
+: "${USER_BIN:=${HOME}/.local/bin}"
 
-MAVEN_VERSION="3.9.9"
+: "${PROJECT_NAME:=springboot-${APP_NAME}}"
+: "${PROJECT_DIR:=${HOME}/${PROJECT_NAME}}"
 
-SPRING_BOOT_VERSION="3.3.5"
-PROJECT_NAME="springboot-hello-${APP_NAME}"
-PROJECT_DIR="${HOME}/${PROJECT_NAME}"
+: "${JAVA_ID:=21.0.10-tem}"
+: "${JAVA_VERSION:=21}"
+: "${JAVA_DISTRIBUTION:=Temurin}"
+: "${JAVA_NAME:=Java ${JAVA_VERSION} (Eclipse ${JAVA_DISTRIBUTION})}"
+: "${MAVEN_VER:=3.9.14}"
+: "${SPRINGBOOT_VER:=3.3.5}"
+: "${ARTIFACT_ID:=hello-${APP_NAME}}"
+: "${CLASS_NAME:=HelloApplication}"
+: "${GROUP_ID:=com.example}"
+: "${VERSION:=0.0.1}"
+: "${JAR_NAME:=${ARTIFACT_ID}-${VERSION}.jar}"
+: "${PORT:=8080}"
+: "${BIND_IP:=0.0.0.0}"
 
-SERVER_PORT=8080
-SERVER_BIND="0.0.0.0"
+# ----------------------------- Root Detection --------------------------------
+# IS_ROOT will be used by is_installed(), perform_self_install(), etc.
+if [ -z "${IS_ROOT:-}" ]; then
+    if [ "$(id -u)" -eq 0 ]; then
+        IS_ROOT=1
+    else
+        IS_ROOT=0
+    fi
+fi
 
-GROUP_ID="com.example"
-ARTIFACT_ID="hello-${APP_NAME}"
-MAIN_CLASS="HelloApplication"
-JAR_NAME="${ARTIFACT_ID}-0.0.1.jar"
+# ----------------------------- Force Flags & Quiet Mode ----------------------
+# Allow overriding behavior via environment variables
+: "${FORCE_USER:=0}"
+: "${FORCE_GLOBAL:=0}"
+: "${FORCE_REINSTALL:=0}"
+: "${QUIET:=0}"
 
-# ─── Colors (only when terminal) ─────────────────────────────────
-
+# ----------------------------- Color Output (Non-interactive Safe) -----------
+# Only enable colors when stdout is a real terminal (works in cron, Docker, CI, etc.)
 if [ -t 1 ]; then
-    C_GREEN='\033[0;32m'
-    C_YELLOW='\033[1;33m'
-    C_RED='\033[0;31m'
-    C_RESET='\033[0m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    RED='\033[0;31m'
+    NC='\033[0m'
 else
-    C_GREEN='' C_YELLOW='' C_RED='' C_RESET=''
+    GREEN='' YELLOW='' RED='' NC=''
 fi
 
-# ─── Install location logic ──────────────────────────────────────
+# POSIX-safe logging functions (respect quiet mode)
+die() { printf >&2 "${RED}Error: %s${NC}\n" "$*"; exit 1; }
+info()    { [ "${QUIET}" -eq 0 ] && printf "${GREEN}[INFO]${NC} %s\n" "$*"; }
+warn()    { [ "${QUIET}" -eq 0 ] && printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2 || true; }
+error()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
+success() { [ "${QUIET}" -eq 0 ] && printf "${GREEN}[OK]${NC} %s\n" "$*"; }
+msg()     { [ "${QUIET}" -eq 0 ] && printf "%s\n" "$*"; }
+[ -t 0 ] && [ -t 1 ] && info "Interactive Mode"
 
-if [ "$(id -u)" -eq 0 ]; then
-    IS_ROOT=1
-    INSTALL_DIR="${GLOBAL_BIN}"
-else
-    IS_ROOT=0
-    INSTALL_DIR="${USER_BIN}"
-fi
+empty_line() {  
+    [ "${QUIET}" -eq 0 ] && echo "" >&2
+}
 
-INSTALL_PATH="${INSTALL_DIR}/${APP_NAME}"
+double_line() { 
+    [ "${QUIET}" -eq 0 ] && echo "==============================================================" >&2 
+} 
 
-# ─── Helper functions ────────────────────────────────────────────
+STEP=1
+step_message() {
+    empty_line
+    double_line
+    [ "${QUIET}" -eq 0 ] && printf "${GREEN}%s.  %s${NC}\n" "$STEP" "$1" >&2
+    double_line
+    empty_line
+    STEP=$((STEP + 1))
+}
+
+# =============================================================================
+# is_installed() - Robust installation check
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Checks whether this app is already installed, supporting both root
+# and normal user installations with safe fallbacks.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
 
 is_installed() {
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${APP_NAME:=springboot3}"
+    : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+
+    if [ -z "${IS_ROOT:-}" ]; then
+        if [ "$(id -u)" -eq 0 ]; then
+            IS_ROOT=1
+        else
+            IS_ROOT=0
+        fi
+    fi
+
+    # Support explicit parameters or force flags
+    if [ "${1:-}" = "--user" ] || [ "${FORCE_USER:-0}" -eq 1 ]; then
+        [ -f "${USER_BIN}/${APP_NAME}" ] && [ -x "${USER_BIN}/${APP_NAME}" ] && return 0
+        return 1
+    elif [ "${1:-}" = "--global" ] || [ "${FORCE_GLOBAL:-0}" -eq 1 ]; then
+        [ -f "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ] && return 0
+        return 1
+    fi
+
+    # Main logic
     if [ "$IS_ROOT" -eq 1 ]; then
-        [ -f "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ]
+        [ -f "${INSTALL_PATH}" ] && [ -x "${INSTALL_PATH}" ]
     else
         { [ -f "${GLOBAL_BIN}/${APP_NAME}" ] && [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; } ||
         { [ -f "${USER_BIN}/${APP_NAME}"   ] && [ -x "${USER_BIN}/${APP_NAME}"   ]; }
     fi
 }
 
+# =============================================================================
+# get_installed_version() - Extract version from installed binary
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Safely reads the VERSION constant from the installed this script.
+# Used by --version-check and --self-update.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other Wilgat projects.
+# =============================================================================
+
+get_installed_version() {
+    local bin_path
+
+    if [ "$IS_ROOT" -eq 1 ] || [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
+        bin_path="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        bin_path="${USER_BIN}/${APP_NAME}"
+    fi
+
+    if [ -x "$bin_path" ]; then
+        # Extract VERSION line safely (POSIX compatible, works in BusyBox ash)
+        grep '^VERSION="' "$bin_path" 2>/dev/null | cut -d'"' -f2 || echo "unknown"
+    else
+        echo "not installed"
+    fi
+}
+
+# =============================================================================
+# version_check() - Compare local vs remote version + suggest install
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Fetches the latest version from GitHub raw and compares with installed one.
+# If not installed and running in interactive terminal, it suggests installation.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
+
+version_check() {
+    info "Checking latest version of ${APP_NAME}..."
+
+    local remote_version
+    remote_version=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
+
+    if [ -z "$remote_version" ]; then
+        error "Failed to fetch remote version"
+        return 1
+    fi
+
+    local local_version
+    local_version=$(get_installed_version)
+
+    printf "Local version : %s\n" "$local_version"
+    printf "Latest version: %s\n\n" "$remote_version"
+
+    if [ "$local_version" = "$remote_version" ]; then
+        success "You are running the latest version."
+        return 0
+    elif [ "$local_version" = "not installed" ]; then
+        warn "${APP_NAME} is not installed yet."
+    else
+        warn "A newer version is available (${remote_version})"
+    fi
+
+    # Automatically suggest installation if nothing is installed (interactive only)
+    if ! is_installed && [ -t 0 ] && [ -t 1 ]; then
+        printf "\nWould you like to install ${APP_NAME} now? (y/N): "
+        read -r answer || true
+        case "$answer" in
+            [Yy]*|[Yy][Ee][Ss]*)
+                FORCE_REINSTALL=1
+                perform_self_install
+                ;;
+            *)
+                printf "Installation skipped by user.\n"
+                ;;
+        esac
+    fi
+}
+
+# =============================================================================
+# self_update() - Perform self-update to latest version
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads and installs the latest version from GitHub.
+# Respects --force and --quiet.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
+
+self_update() {
+    info "Starting self-update of ${APP_NAME}..."
+
+    local remote_version
+    remote_version=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
+
+    if [ -z "$remote_version" ]; then
+        error "Failed to fetch latest version"
+        return 1
+    fi
+
+    local local_version
+    local_version=$(get_installed_version)
+
+    if [ "$local_version" = "$remote_version" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        success "Already running the latest version (${remote_version})."
+        return 0
+    fi
+
+    if [ "$local_version" != "$remote_version" ]; then
+        info "Updating from ${local_version} → ${remote_version}"
+    fi
+
+    FORCE_REINSTALL=1
+    perform_self_install
+}
+
+# =============================================================================
+# in_path() - Check if a directory is in $PATH
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns 0 if the given directory (default: INSTALL_DIR) is already in $PATH.
+# POSIX-compatible using case statement (works in sh/dash/bash/zsh).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
+
 in_path() {
     case ":${PATH}:" in
-        *:"${INSTALL_DIR}":*) return 0 ;;
+        *:"${1:-$USER_BIN}":*) return 0 ;;
         *) return 1 ;;
     esac
 }
 
-add_to_bashrc() {
+# =============================================================================
+# add_to_shell_path() - Multi-shell PATH support (bash + zsh + fish)
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Adds ~/.local/bin to the user's shell configuration for bash, zsh, and fish.
+# Works even if the user is currently using a different shell.
+#
+# Using "~/.local/bin" instead of ${USER_BIN} without mapping to existing user 
+#   is the de facto standard, "~/.local/bin" is better then "/home/someone/.local/bin" inside ~/.bashrc 
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
+
+add_to_shell_path() {
+    local added=0
+
+    # Bash
     local bashrc="${HOME}/.bashrc"
-    local line="export PATH=\"\$HOME/.local/bin:\$PATH\""
+    if [ -f "$bashrc" ]; then
+        if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$bashrc" 2>/dev/null; then
+            printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$bashrc"
+            printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$bashrc"
+            added=1
+        fi
+    fi
 
-    [ -f "$bashrc" ] && grep -qF "$line" "$bashrc" 2>/dev/null && return 0
+    # Zsh
+    local zshrc="${HOME}/.zshrc"
+    if [ -f "$zshrc" ]; then
+        if ! grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$zshrc" 2>/dev/null; then
+            printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$zshrc"
+            printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$zshrc"
+            added=1
+        fi
+    fi
 
-    printf "\n"                          >> "$bashrc"
-    printf "# Added by %s installer\n" "$APP_NAME" >> "$bashrc"
-    printf "%s\n" "$line"                >> "$bashrc"
+    # Fish
+    local fish_config="${HOME}/.config/fish/config.fish"
+    if [ -d "${HOME}/.config/fish" ] || mkdir -p "${HOME}/.config/fish" 2>/dev/null; then
+        if [ -f "$fish_config" ] && grep -qF 'set -gx PATH $HOME/.local/bin $PATH' "$fish_config" 2>/dev/null; then
+            : # already present
+        else
+            printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$fish_config"
+            printf 'set -gx PATH $HOME/.local/bin $PATH\n' >> "$fish_config"
+            added=1
+        fi
+    fi
 
-    printf "${C_YELLOW}→ Added ~/.local/bin to PATH in ~/.bashrc${C_RESET}\n"
+    if [ "$added" -eq 1 ]; then
+        printf "${YELLOW}→ Added ~/.local/bin to PATH for bash/zsh/fish${NC}\n"
+        printf "${YELLOW}→ Restart your terminal or run: source <your config file>${NC}\n"
+    fi
 }
+
+# =============================================================================
+# perform_self_install() - Main self-installation logic
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Downloads and installs this to the correct location (global or user-local).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
 
 perform_self_install() {
-    printf "\n${C_YELLOW}%s not found → installing...${C_RESET}\n\n" "$APP_NAME"
+    info "Starting installation of ${APP_NAME} ${VERSION}..."
+
+    if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        success "${APP_NAME} is already installed. Use --force or --reinstall to override."
+        return 0
+    fi
+
+    # Determine install location
+    if [ "$IS_ROOT" -eq 1 ]; then
+        INSTALL_DIR="${GLOBAL_BIN}"
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        INSTALL_DIR="${USER_BIN}"
+        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
+    fi
+
+    # Create directory
+    if ! mkdir -p "${INSTALL_DIR}" 2>/dev/null; then
+        error "Failed to create ${INSTALL_DIR}"
+        error "Try running with sudo or --user flag"
+        return 1
+    fi
+
+    # Download to temporary file (secure mktemp)
+    local tmp_file
+    tmp_file=$(mktemp -t "${APP_NAME}.XXXXXX") || {
+        error "Failed to create temporary file"
+        return 1
+    }
+
+    info "Downloading ${APP_NAME} from GitHub..."
+
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
+            error "Download failed (curl)"
+            rm -f "${tmp_file}"
+            return 1
+        }
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
+            error "Download failed (wget)"
+            rm -f "${tmp_file}"
+            return 1
+        }
+    else
+        error "Neither curl nor wget found"
+        rm -f "${tmp_file}"
+        return 1
+    fi
+
+    # chmod +x is unreliable on Git Bash (Windows), but shebang usually suffices
+    chmod +x "${tmp_file}" 2>/dev/null || warn "chmod +x failed (common on Git Bash / Windows - shebang should still allow execution)"
+
+    rm -f "${INSTALL_PATH}" 2>/dev/null
+    if ! mv "${tmp_file}" "${INSTALL_PATH}" 2>/dev/null; then
+        error "Failed to move to ${INSTALL_PATH}"
+        rm -f "${tmp_file}"
+        return 1
+    fi
+
+    success "${APP_NAME} ${VERSION} successfully installed to ${INSTALL_PATH}"
+
+    # PATH guidance for normal users
+    if [ "$IS_ROOT" -eq 0 ]; then
+        if ! in_path; then
+            add_to_shell_path
+        else
+            success "${APP_NAME} is now available in your PATH"
+        fi
+    else
+        success "You can now run: ${APP_NAME}"
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# maybe_install() - Friendly installation prompt
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Called when this script is not installed. Shows helpful message and asks for confirmation.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY !!!
+# =============================================================================
+
+maybe_install() {
+    if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        return 0
+    fi
+
+    printf "\n"
+    printf "${YELLOW}Note: '%s' is not installed yet.${NC}\n" "$APP_NAME"
+    printf "     Version: ${VERSION}\n\n"
+    printf "Recommended installation command:\n\n"
 
     if [ "$IS_ROOT" -eq 1 ]; then
-        printf "Recommended install command:\n"
-        printf "  ${C_GREEN}sudo curl -fsSL %s | sudo bash${C_RESET}\n\n" "$SCRIPT_URL"
+        printf "     ${GREEN}sudo curl -fsSL %s | sudo sh${NC}\n" "$SCRIPT_URL"
     else
-        printf "Recommended install command:\n"
-        printf "  ${C_GREEN}curl -fsSL %s | bash${C_RESET}\n\n" "$SCRIPT_URL"
+        printf "     ${GREEN}curl -fsSL %s | sh${NC}\n" "$SCRIPT_URL"
     fi
+    printf "\n"
 
-    mkdir -p "${INSTALL_DIR}" 2>/dev/null || {
-        printf "${C_RED}Cannot create directory %s${C_RESET}\n" "${INSTALL_DIR}" >&2
-        exit 1
-    }
+    local should_install=false
 
-    local tmp
-    tmp=$(mktemp "/tmp/${APP_NAME}.XXXXXXXX") || {
-        printf "${C_RED}mktemp failed${C_RESET}\n" >&2
-        exit 1
-    }
-
-    if ! curl -fsSL "$SCRIPT_URL" -o "$tmp"; then
-        printf "${C_RED}Failed to download script${C_RESET}\n" >&2
-        rm -f "$tmp"
-        exit 1
-    fi
-
-    chmod 755 "$tmp" || {
-        printf "${C_RED}chmod failed${C_RESET}\n" >&2
-        rm -f "$tmp"
-        exit 1
-    }
-
-    if mv "$tmp" "$INSTALL_PATH" 2>/dev/null; then
-        printf "${C_GREEN}Installed to %s${C_RESET}\n" "$INSTALL_PATH"
-    else
-        printf "${C_RED}Failed to install to %s${C_RESET}\n" "$INSTALL_PATH" >&2
-        printf "Permission denied? Try with sudo.\n"
-        rm -f "$tmp"
-        exit 1
-    fi
-
-    if [ "$IS_ROOT" -eq 0 ] && ! in_path; then
-        add_to_bashrc
-        printf "\n"
-        printf "${C_YELLOW}Important:${C_RESET} ~/.local/bin was not in your PATH.\n"
-        printf "          We added it to ~/.bashrc.\n\n"
-        printf "          Please run one of these now:\n"
-        printf "            ${C_GREEN}. ~/.bashrc${C_RESET}\n"
-        printf "          or open a new terminal.\n\n"
-        printf "Continuing in current session anyway...\n\n"
-    fi
-
-    printf "${C_GREEN}Proceeding with SDKMAN + Java + Maven + demo setup...${C_RESET}\n\n"
-}
-
-maybe_self_install() {
-    is_installed && return 0
-    perform_self_install
-}
-
-show_help() {
-    cat <<EOF
-${APP_NAME} – version ${APP_VERSION}
-
-One-command Spring Boot 3.x environment setup + minimal demo
-
-Usage:
-  ${APP_NAME}               Setup tools (if needed) + create + build + run demo
-  ${APP_NAME} help          Show this help
-  ${APP_NAME} version       Show version
-
-What it does:
-  • Installs itself to ~/.local/bin (or /usr/local/bin if root)
-  • Installs SDKMAN! (if missing)
-  • Installs Java ${JAVA_MAIN_VER} (${JAVA_DISTRIBUTION})
-  • Installs Maven ${MAVEN_VERSION}
-  • Creates ~/${PROJECT_NAME} (minimal Spring Boot ${SPRING_BOOT_VERSION} project)
-  • Builds & runs it → open http://localhost:${SERVER_PORT}
-
-Note: After first SDKMAN install you may need to run
-      . "\$HOME/.sdkman/bin/sdkman-init.sh"
-      or open a new terminal before 'sdk' works in current session.
-
-EOF
-}
-
-parse_arguments() {
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            help|--help|-h)     show_help; exit 0 ;;
-            version|--version)  printf "%s version %s\n" "$APP_NAME" "$APP_VERSION"; exit 0 ;;
-            *)  printf "${C_RED}Unknown argument: %s${C_RESET}\n" "$1" >&2
-                printf "Try: %s help\n" "$APP_NAME"
-                exit 1 ;;
+    if [ -t 0 ] && [ -t 1 ]; then
+        # Interactive terminal
+        printf "     Install now? (y/N): "
+        read -r answer || true
+        case "$answer" in
+            [Yy]*|[Yy][Ee][Ss]*) should_install=true ;;
+            *) printf "Installation skipped by user.\n"; return 0 ;;
         esac
-    done
+    else
+        # Non-interactive (curl | sh, scripts, CI, etc.)
+        printf "${YELLOW}Non-interactive mode detected → installing automatically...${NC}\n"
+        should_install=true
+    fi
+
+    if [ "$should_install" = "true" ]; then
+        perform_self_install
+        exit 0
+    fi
 }
 
-setup_sdkman() {
-    printf "→ Checking SDKMAN...\n"
-    if [ -d "${HOME}/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
-        printf "   Already installed.\n"
-    else
-        printf "   Installing SDKMAN...\n"
-        curl -s "https://get.sdkman.io" | bash
-        [ $? -ne 0 ] && { printf "${C_RED}SDKMAN install failed${C_RESET}\n"; exit 1; }
+# =============================================================================
+# check_alpine_requirements()
+# =============================================================================
+check_alpine_requirements() {
+    if [ -f "/etc/alpine-release" ]; then
+        info "Alpine Linux detected."
+        if ! command -v bash >/dev/null 2>&1; then
+            warn "bash is required for SDKMAN! on Alpine Linux."
+            printf "\nPlease install bash first:\n"
+            printf "    ${GREEN}apk add bash${NC}\n\n"
+            printf "Then re-run this script with:\n"
+            printf "    ${GREEN}bash <(curl -fsSL ${SCRIPT_URL})${NC}\n"
+            exit 1
+        fi
+    fi
+}
 
-        # shellcheck disable=SC1091
-        [ -s "${HOME}/.sdkman/bin/sdkman-init.sh" ] && . "${HOME}/.sdkman/bin/sdkman-init.sh"
+# =============================================================================
+# setup_sdkman()
+# =============================================================================
+setup_sdkman() {
+    step_message "Checking SDKMAN..."
+    check_alpine_requirements
+    if [ -d "${HOME}/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
+        info "SDKMAN already installed."
+        return 0
+    fi
+
+    info "Installing SDKMAN..."
+    curl -s "https://get.sdkman.io" | bash || die "SDKMAN install failed"
+
+    local init="${HOME}/.sdkman/bin/sdkman-init.sh"
+    if [ -s "$init" ]; then
+        . "$init"
     fi
 
     if ! command -v sdk >/dev/null 2>&1; then
-        printf "\n${C_YELLOW}sdk command not available yet in this session.${C_RESET}\n"
-        printf "This is normal after fresh SDKMAN install.\n\n"
-        printf "Please run:\n"
-        printf "  ${C_GREEN}. \"\$HOME/.sdkman/bin/sdkman-init.sh\"${C_RESET}\n"
-        printf "  or open a new terminal,\n"
-        printf "  then re-run %s\n\n" "$APP_NAME"
+        warn "SDKMAN installed but 'sdk' command is not yet available."
+        printf "\nPlease run one of these commands, then retry:\n"
+        printf "    ${GREEN}. \"${HOME}/.sdkman/bin/sdkman-init.sh\"${NC}\n"
+        printf "    or simply open a new terminal\n\n"
         exit 1
     fi
 
-    printf "   SDKMAN ready. "
-    sdk version | head -n 1
+    info "SDKMAN is ready."
 }
 
 setup_java() {
-    printf "\n→ Installing Java %s (%s)...\n" "$JAVA_MAIN_VER" "$JAVA_DISTRIBUTION"
-    sdk install java "${JAVA_SDK_ID}" </dev/null || {
-        printf "${C_RED}Failed to install Java %s %s${C_RESET}\n" "$JAVA_MAIN_VER" "$JAVA_DISTRIBUTION"
-        printf "Run 'sdk list java' to see available versions\n"
-        exit 1
-    }
-
-    sdk default java "${JAVA_SDK_ID}" >/dev/null 2>&1
-    sdk use java "${JAVA_SDK_ID}" >/dev/null 2>&1 || true
-
-    local java_bin
-    java_bin="$(sdk home java current)/bin/java"
-    if [ -x "$java_bin" ]; then
-        "$java_bin" -version 2>&1 | head -n 1
-    else
-        java -version 2>&1 | head -n 1 || {
-            printf "${C_RED}java command not found after install${C_RESET}\n"
-            exit 1
-        }
-    fi
+    step_message "Setting up Java ..."
+    info "Setting up ${JAVA_NAME}..."
+    sdk install java "${JAVA_ID}" </dev/null || die "Java install failed"
+    sdk default java "${JAVA_ID}" >/dev/null 2>&1
+    sdk use java "${JAVA_ID}" >/dev/null 2>&1 || true
+    java -version 2>&1 | head -n 1 || die "Java not working"
 }
 
 setup_maven() {
-    printf "\n→ Installing Maven %s...\n" "$MAVEN_VERSION"
-    sdk install maven "${MAVEN_VERSION}" </dev/null || {
-        printf "${C_RED}Failed to install Maven %s${C_RESET}\n" "$MAVEN_VERSION"
-        exit 1
-    }
-
-    sdk default maven "${MAVEN_VERSION}" >/dev/null 2>&1
-    sdk use maven "${MAVEN_VERSION}" >/dev/null 2>&1 || true
-
-    mvn --version | head -n 3 || {
-        printf "${C_RED}mvn command not found${C_RESET}\n"
-        exit 1
-    }
+    step_message "Setting up Maven ..."
+    info "Setting up Maven ${MAVEN_VER}..."
+    sdk install maven "${MAVEN_VER}" </dev/null || die "Maven install failed"
+    sdk default maven "${MAVEN_VER}" >/dev/null 2>&1
+    sdk use maven "${MAVEN_VER}" >/dev/null 2>&1 || true
+    mvn --version | head -n 3 || die "Maven not working"
 }
 
-setup_spring_project() {
-    printf "\n→ Creating minimal Spring Boot %s project...\n" "$SPRING_BOOT_VERSION"
-    printf "   Location: %s\n" "$PROJECT_DIR"
+write_file_atomic() {
+    local target="$1"
+    local tmp
+    tmp=$(mktemp "${target}.XXXXXXXX") || die "mktemp failed"
 
-    [ -d "$PROJECT_DIR" ] && {
-        printf "   Removing previous project folder...\n"
-        rm -rf "$PROJECT_DIR"
-    }
+    cat > "${tmp}" || { rm -f "${tmp}"; die "write failed"; }
+    mv "${tmp}" "${target}" || { rm -f "${tmp}"; die "mv failed → ${target}"; }
+}
 
-    mkdir -p "$PROJECT_DIR" || exit 1
-    cd "$PROJECT_DIR" || exit 1
+setup_springboot_project() {
+    step_message "Setting up Spring Boot project ..."
 
-    # ── pom.xml ───────────────────────────────────────
-    cat > pom.xml <<EOF
+    info "Preparing Spring Boot ${SPRINGBOOT_VER} demo → ${PROJECT_DIR}"
+
+    if [ -d "${PROJECT_DIR}" ]; then
+        info "Removing old project folder..."
+        rm -rf "${PROJECT_DIR}"
+    fi
+
+    mkdir -p "${PROJECT_DIR}" || die "Cannot create project dir"
+    cd "${PROJECT_DIR}" || die "cd failed"
+
+    write_file_atomic "pom.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
-    <groupId>${GROUP_ID}</groupId>
+    <groupId>com.example</groupId>
     <artifactId>${ARTIFACT_ID}</artifactId>
     <version>0.0.1</version>
     <packaging>jar</packaging>
-
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>${SPRING_BOOT_VERSION}</version>
+        <version>${SPRINGBOOT_VER}</version>
         <relativePath/>
     </parent>
-
     <properties>
-        <java.version>${JAVA_MAIN_VER}</java.version>
+        <java.version>${JAVA_VERSION}</java.version>
     </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
     </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -320,15 +660,9 @@ setup_spring_project() {
 </project>
 EOF
 
-    # ── Main class ────────────────────────────────────
-    local pkg_dir
-    pkg_dir=$(echo "${GROUP_ID}" | tr '.' '/')
-    local class_path="src/main/java/${pkg_dir}"
-    mkdir -p "${class_path}"
-
-    cat > "${class_path}/${MAIN_CLASS}.java" <<EOF
-package ${GROUP_ID};
-
+    mkdir -p "src/main/java/com/example"
+    write_file_atomic "src/main/java/com/example/HelloApplication.java" <<EOF
+package com.example;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -336,71 +670,138 @@ import org.springframework.web.bind.annotation.RestController;
 
 @SpringBootApplication
 @RestController
-public class ${MAIN_CLASS} {
-
+public class HelloApplication {
     public static void main(String[] args) {
-        SpringApplication.run(${MAIN_CLASS}.class, args);
+        SpringApplication.run(HelloApplication.class, args);
     }
-
     @GetMapping("/")
     public String home() {
-        return "Hello from Spring Boot ${SPRING_BOOT_VERSION}!<br>\\n" +
-               "Running on Java ${JAVA_MAIN_VER} (${JAVA_DISTRIBUTION})<br>\\n";
+        return "Hello from Spring Boot ${SPRINGBOOT_VER}!<br/>Running on ${JAVA_NAME}";
     }
 }
 EOF
 
-    # ── application.properties ────────────────────────
-    mkdir -p src/main/resources
-    cat > src/main/resources/application.properties <<EOF
-server.port=${SERVER_PORT}
-server.address=${SERVER_BIND}
+    mkdir -p "src/main/resources"
+    write_file_atomic "src/main/resources/application.properties" <<EOF
+server.port=${PORT}
+server.address=${BIND_IP}
 EOF
 
-    printf "   Project structure created.\n"
+    info "Spring Boot project created successfully."
 }
 
 build_and_run() {
-    printf "\n→ Building application...\n"
-
+    step_message "Building and running ..."
+    info "Building project..."
     mvn clean package -DskipTests || {
-        printf "${C_RED}Build failed${C_RESET}\n"
-        printf "You can debug manually:\n"
-        printf "  cd %s && mvn clean package\n" "$PROJECT_DIR"
+        warn "Build failed."
+        printf "Debug: cd \"%s\" && mvn clean package\n" "${PROJECT_DIR}"
         exit 1
     }
-
-    printf "\n"
-    printf "==============================================================\n"
-    printf "  Spring Boot %s app is starting...\n" "$SPRING_BOOT_VERSION"
-    printf "  → Open: http://localhost:%s\n" "$SERVER_PORT"
-    printf "  → Press Ctrl+C to stop\n"
-    printf "==============================================================\n\n"
-
-    local java_bin
-    java_bin="$(sdk home java current)/bin/java"
-    if [ -x "$java_bin" ]; then
-        exec "$java_bin" -jar "target/${JAR_NAME}"
-    else
-        exec java -jar "target/${JAR_NAME}"
-    fi
+    empty_line
+    double_line
+    msg "  Spring Boot ${SPRINGBOOT_VER} is starting...\n"
+    msg "  → Open: http://localhost:${PORT}/\n"
+    msg "  → Ctrl+C to stop\n"
+    double_line
+    empty_line
+    empty_line
+    exec java -jar "target/${JAR_NAME}"
 }
 
-main() {
-    parse_arguments "$@"
-    maybe_self_install
-
+show_help() {
     cat <<EOF
-==============================================================
-  ${APP_NAME} ${APP_VERSION}  –  Spring Boot ${SPRING_BOOT_VERSION} Quick Start
-==============================================================
+${APP_NAME} v${VERSION} — ${DESCRIPTION}
+
+Usage:
+  ${APP_NAME}                 Setup + build + run
+  ${APP_NAME} version         Show version
+  ${APP_NAME} version-check   Compare with latest
+  ${APP_NAME} self-update     Update to latest
+  ${APP_NAME} help            This help
+
+Options:
+  --version, -v       Show version information
+  --version-check     Compare installed version with latest on GitHub
+  --self-update       Update to the latest version from GitHub
+  --force, --reinstall Force reinstall / update
+  --quiet, -q         Suppress non-error output
+  --help, -h          Show this help message
 
 EOF
+}
+
+
+main() {
+    : "${HOME:=/root}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+
+    # Default action
+    local cmd="run"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --version|-v)
+                cmd="version"
+                ;;
+            --version-check)
+                cmd="version-check"
+                ;;
+            --self-update)
+                cmd="self-update"
+                ;;
+            --force|--reinstall)
+                FORCE_REINSTALL=1
+                ;;
+            --quiet|-q)
+                QUIET=1
+                ;;
+            --help|-h)
+                cmd="help"
+                ;;
+            --*)
+                error "Unknown option: $1"
+                printf "Try: %s --help\n" "$APP_NAME" >&2
+                exit 1
+                ;;
+            *)
+                error "Unknown argument: $1"
+                printf "Try: %s --help\n" "$APP_NAME" >&2
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    # Special handling for version-check and self-update (can run even if not installed)
+    if [ "$cmd" = "version" ]; then
+        printf "%s version %s\n" "${APP_NAME}" "${VERSION}"
+        exit 0
+    fi
+
+
+    if [ "$cmd" = "self-update" ]; then
+        self_update
+        exit 0
+    fi
+
+    if ! is_installed; then
+        maybe_install
+    fi
+
+    case "${cmd}" in
+        version-check)   version_check; exit 0 ;;
+        self-update)     self_update; exit 0 ;;
+        help)            show_help; exit 0 ;;
+        run)             ;;
+        *)               die "Invalid cmd" ;;
+    esac
 
     setup_sdkman
     setup_java
     setup_maven
-    setup_spring_project
+    setup_springboot_project
     build_and_run
 }
 
