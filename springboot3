@@ -89,6 +89,7 @@ APP_NAME="springboot3"
 VERSION="1.5.0"
 DESCRIPTION="Spring Boot 3.3.5 quick setup"
 REMOTE_VERSION=$VERSION
+SH=bash
 
 REPO_USER="Wilgat"
 REPO_NAME="springboot3"
@@ -170,13 +171,12 @@ step_message() {
     STEP=$((STEP + 1))
 }
 
-
 # =============================================================================
 # is_installed() - Robust installation check
 # =============================================================================
 #
 # GENERAL PURPOSE:
-# Checks whether ciao is already installed, supporting both root
+# Checks whether the program is already installed, supporting both root
 # and normal user installations with safe fallbacks.
 #
 # Please don't modify this code for root-only installed
@@ -509,7 +509,7 @@ perform_self_install() {
 # =============================================================================
 #
 # GENERAL PURPOSE:
-# Called when ciao is not installed. Shows helpful message and asks for confirmation.
+# Called when the program is not installed. Shows helpful message and asks for confirmation.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
@@ -526,9 +526,9 @@ maybe_install() {
     printf "Recommended installation command:\n\n"
 
     if [ "$IS_ROOT" -eq 1 ]; then
-        printf "     ${GREEN}sudo curl -fsSL %s | sudo sh${NC}\n" "$SCRIPT_URL"
+        printf "     ${GREEN}sudo curl -fsSL %s | sudo ${SH}${NC}\n" "$SCRIPT_URL"
     else
-        printf "     ${GREEN}curl -fsSL %s | sh${NC}\n" "$SCRIPT_URL"
+        printf "     ${GREEN}curl -fsSL %s | ${SH}${NC}\n" "$SCRIPT_URL"
     fi
     printf "\n"
 
@@ -543,7 +543,7 @@ maybe_install() {
             *) printf "Installation skipped by user.\n"; return 0 ;;
         esac
     else
-        # Non-interactive (curl | sh, scripts, CI, etc.)
+        # Non-interactive (curl | sh, curl | bash, scripts, CI, etc.)
         printf "${YELLOW}Non-interactive mode detected → installing automatically...${NC}\n"
         should_install=true
     fi
@@ -554,15 +554,29 @@ maybe_install() {
     fi
 }
 
+# =============================================================================
+# check_alpine_requirements() - Alpine Linux bash requirement check
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Checks if running on Alpine Linux and ensures bash is installed (required by SDKMAN!).
+# Shows clear instructions if bash is missing.
+#
+# This function is reused across multiple projects.
+# It respects the ${SH} variable set at the top of the script.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+# =============================================================================
 check_alpine_requirements() {
-    if [ -f "/etc/alpine-release" ]; then
+    if [ -f "/etc/alpine-release" ] && [ "${SH}" = "bash" ]; then
         info "Alpine Linux detected."
-        if ! command -v bash >/dev/null 2>&1; then
-            warn "bash is required for SDKMAN! on Alpine Linux."
-            printf "\nPlease install bash first:\n"
-            printf "    ${GREEN}apk add bash${NC}\n\n"
+        if ! command -v ${SH} >/dev/null 2>&1; then
+            warn "${SH} is required for SDKMAN! on Alpine Linux."
+            printf "\nPlease install ${SH} first:\n"
+            printf "    ${GREEN}apk add ${SH}${NC}\n\n"
             printf "Then re-run this script with:\n"
-            printf "    ${GREEN}bash <(curl -fsSL ${SCRIPT_URL})${NC}\n"
+            printf "    ${GREEN}${SH} <(curl -fsSL ${SCRIPT_URL})${NC}\n"
             exit 1
         fi
     fi
@@ -762,9 +776,6 @@ EOF
 build_and_run() {
     step_message "Building and running ..."
 
-    : "${PROJECT_DIR:=${HOME}/springboot-springboot3}"
-    : "${JAR_NAME:=hello-springboot3-0.0.1.jar}"
-
     info "Building project with Maven..."
 
     mvn clean package -DskipTests || {
@@ -799,7 +810,7 @@ build_and_run() {
 # =============================================================================
 # Updated help with --force behavior
 # =============================================================================
-show_spring3_help() {
+show_spring2_help() {
     cat <<EOF
 ${APP_NAME} v${VERSION} — ${DESCRIPTION}
 
@@ -887,7 +898,7 @@ main() {
     case "${cmd}" in
         version-check)   version_check; exit 0 ;;
         self-update)     self_update; exit 0 ;;
-        help)            show_spring3_help; exit 0 ;;
+        help)            show_spring2_help; exit 0 ;;
         run)             ;;
         *)               die "Invalid cmd" ;;
     esac
