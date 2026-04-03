@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# springboot3 – version 1.4.0
+# springboot3 – version 1.5.0
 # =============================================================================
 #
 # One-command installer + launcher for Spring Boot 3.3.5
@@ -86,7 +86,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="springboot3"
-VERSION="1.1.0"
+VERSION="1.5.0"
 DESCRIPTION="Spring Boot 3.3.5 quick setup"
 REMOTE_VERSION=$VERSION
 
@@ -313,23 +313,7 @@ self_update() {
     perform_self_install
 }
 
-# =============================================================================
-# in_path() - Check if a directory is in $PATH
-# =============================================================================
 #
-# GENERAL PURPOSE:
-# Returns 0 if the given directory (default: INSTALL_DIR) is already in $PATH.
-# POSIX-compatible using case statement (works in sh/dash/bash/zsh).
-#
-# !!! DO NOT MODIFY OR SIMPLIFY !!!
-# =============================================================================
-
-in_path() {
-    case ":${PATH}:" in
-        *:"${1:-$USER_BIN}":*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
 
 # =============================================================================
 # add_to_shell_path() - Multi-shell PATH support (bash + zsh + fish)
@@ -340,6 +324,7 @@ in_path() {
 # Works even if the user is currently using a different shell.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 add_to_shell_path() {
@@ -408,10 +393,27 @@ add_to_shell_path() {
 # GENERAL PURPOSE:
 # Downloads and installs ciao to the correct location (global or user-local).
 #
+# Please don't modify this code for root-only installed
+# You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
+#   this function
+#
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 perform_self_install() {
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+
+    if [ "$(id -u)" -eq 0 ]; then
+        IS_ROOT=1
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        IS_ROOT=0
+        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
+    fi
+
     if [ -z "$REMOTE_VERSION" ]; then
         REMOTE_VERSION=${VERSION}
     fi
@@ -421,8 +423,6 @@ perform_self_install() {
         success "${APP_NAME} is already installed. Use --force to override."
         return 0
     fi
-
-    INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
 
     if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
         error "Failed to create ${GLOBAL_BIN}"
@@ -468,6 +468,7 @@ perform_self_install() {
     return 0
 }
 
+
 # =============================================================================
 # maybe_install() - Friendly installation prompt
 # =============================================================================
@@ -476,6 +477,7 @@ perform_self_install() {
 # Called when ciao is not installed. Shows helpful message and asks for confirmation.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 maybe_install() {
@@ -498,6 +500,7 @@ maybe_install() {
     local should_install=false
 
     if [ -t 0 ] && [ -t 1 ]; then
+        # Interactive terminal
         printf "     Install now? (y/N): "
         read -r answer || true
         case "$answer" in
@@ -505,12 +508,14 @@ maybe_install() {
             *) printf "Installation skipped by user.\n"; return 0 ;;
         esac
     else
+        # Non-interactive (curl | sh, scripts, CI, etc.)
         printf "${YELLOW}Non-interactive mode detected → installing automatically...${NC}\n"
         should_install=true
     fi
 
     if [ "$should_install" = "true" ]; then
         perform_self_install
+        exit 0
     fi
 }
 

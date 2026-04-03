@@ -3,7 +3,7 @@ Here's the **complete, polished `README.md`** for your **springboot3** project, 
 ```markdown
 # springboot3
 
-<img src="https://img.shields.io/badge/Version-1.4.0-blue?style=flat-square" alt="Version">  
+<img src="https://img.shields.io/badge/Version-1.5.0-blue?style=flat-square" alt="Version">  
 <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21">  
 <img src="https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.3.5">  
 <img src="https://img.shields.io/badge/Maven-3.9.14-red?style=flat-square&logo=apachemaven" alt="Maven 3.9.14">  
@@ -62,7 +62,7 @@ springboot3 self-update        # Update to latest version
 springboot3 help               # Show detailed help
 ```
 
-### Behavior in v1.4.0
+### Behavior in v1.5.0
 - **Normal run**: Preserves your existing project folder, `pom.xml`, Java source, and `application.properties` (ideal for repeated testing or manual edits).
 - **`--force` / `--reinstall`**: Completely wipes and regenerates the project for a clean slate.
 
