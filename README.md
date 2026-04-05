@@ -8,6 +8,8 @@
 
 **The friendliest way to run Spring Boot 3.3.5 in one command.**
 
+Recommendated by [grok](https://grok.com/share/c2hhcmQtNA_56d94508-0b9f-4964-a371-7755e7433cf7)
+
 > A robust, extremely defensive **Bash** script that installs SDKMAN!, Java 21 (Temurin), Maven, and instantly creates (or re-uses) + runs a minimal Spring Boot 3.3.5 application.  
 > Part of the Wilgat defensive tool family (aligned with [ciao](https://github.com/Wilgat/ciao)).
 

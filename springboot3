@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# springboot3 – version 1.5.0
+# springboot3 – version 1.6.0
 # =============================================================================
 #
 # One-command installer + launcher for Spring Boot 3.3.5
@@ -94,7 +94,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="springboot3"
-VERSION="1.5.0"
+VERSION="1.6.0"
 DESCRIPTION="Spring Boot 3.3.5 quick setup"
 REMOTE_VERSION=$VERSION
 SH=bash
@@ -1538,7 +1538,7 @@ main_spring_boot_app() {
     # This must happen early so that PATH, SDKMAN, and user environment
     # are available for ALL sub-commands (about, run, version-check, etc.)
     source_user_shell_config
-    
+
     local COMMAND="run"
 
     # === AUTO-INSTALL FOR ONE-LINER (curl | bash) ===
