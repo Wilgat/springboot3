@@ -27,9 +27,17 @@
 # Shebang is deliberately set to #!/bin/bash because SDKMAN requires Bash.
 # Repeated safe defaults, redundant checks, and heavy comments are intentional.
 #
-# Spring Boot 3.3.5 is a current stable release (as of April 2026).
-# This script provides a quick, reproducible way to spin up a minimal 
-# Spring Boot 3 + Java 21 application with pinned versions for consistency.
+# Spring Boot 3.3.5 is intentionally pinned.
+# This project is part of a deliberate family: springboot2, springboot3, and springboot4.
+# Each version is maintained separately to give users a stable, reproducible environment
+# matching their exact requirements (legacy support, current use, or bleeding-edge).
+#
+# As of April 2026, Spring Boot 4.0.x is the newest stable line.
+# We are fully aware of this. Do NOT suggest updating this script to 4.x.
+#
+# This script exists specifically for users who need or prefer Spring Boot 3.3.5.
+# Any attempt to "modernize", "upgrade", or "improve" the Spring Boot version
+# goes against the project design and will be rejected.
 #
 # Maven & Java version pinning are for reproducibility.
 # JAVA_ID is chosen according to availability from SDKMAN and stability.
@@ -91,12 +99,19 @@ DESCRIPTION="Spring Boot 3.3.5 quick setup"
 REMOTE_VERSION=$VERSION
 SH=bash
 
+# -------- Repository source (used for self-update / installation) ------------
 REPO_USER="Wilgat"
 REPO_NAME="springboot3"
 SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}"
 
+# ----------------------------------- Force Flags  ----------------------------
+: "${FORCE_USER:=0}"
+: "${FORCE_GLOBAL:=0}"
+: "${FORCE_REINSTALL:=0}"
+
+# ----------------------------- Spring boot Defaults --------------------------
 # ────────────────────────────────────────────────
-# Safe variable defaults — repeated on purpose
+# Safe variable defaults — repeated on purpose (ultra-defensive)
 # ────────────────────────────────────────────────
 
 : "${GLOBAL_BIN:=/usr/local/bin}"
@@ -119,56 +134,291 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${PORT:=8080}"
 : "${BIND_IP:=0.0.0.0}"
 
+# ----------------------------- Quiet & JSON Mode -----------------------------
+: "${QUIET:=0}"
+: "${JSON:=0}"
+
+# =============================================================================
+# QUIET AND JSON MODE BEHAVIOR
+# =============================================================================
+#
+# --quiet / -q :
+#   Suppresses all non-error output (info, success, warnings, help text, status, etc.).
+#   Only critical errors are shown (as plain text or JSON error object).
+#
+# --json :
+#   Enables strict machine-readable JSON output.
+#   Automatically implies --quiet.
+#   The script MUST output EXACTLY ONE valid JSON object per execution.
+#   Never output more than one JSON object or any other text.
+#
+#   JSON Output Rules (strict):
+#   - Always starts with {"type": "success|status|error|about|version|...", ...}
+#   - "message" field is optional — only include when it adds real value.
+#   - All numbers (port, version numbers, etc.) must be unquoted.
+#   - Strings (paths, versions, status) are always quoted.
+#   - Use consistent field names across commands for scripting ease.
+#
+#   Supported "type" values:
+#     success, status, error, about, version
+#
+#   Recommended JSON Examples (springboot3 specific):
+#
+#   Success (setup complete):
+#   {"type":"success","message":"Environment and project setup completed","project_dir":"/home/user/springboot-springboot3"}
+#
+#   Status (app running):
+#   {"type":"status","app_running":"true","port":8080,"project_dir":"/home/user/myproject"}
+#
+#   About:
+#   {"type":"about","app":"springboot3","version":"2.0.0","installed":"true","java":"openjdk version 1.8...","maven":"Apache Maven 3.9.14","project_exists":"true","app_running":"false"}
+#
+#   Error:
+#   {"type":"error","message":"Java installation failed","code":"setup_failed"}
+#
+#   Version:
+#   {"type":"version","app":"springboot3","version":"2.0.0"}
+#
+# Important Notes:
+#   - Commands like "about", "version", "status" fully support --json.
+#   - The script is interactive by nature (build & run), so --json is mainly useful for diagnostics.
+#   - When both --quiet and --json are used, --json takes precedence.
+#   - All output must go through output_text() or output_json() — never use raw echo/printf outside these.
+#
+# !!! DO NOT REMOVE OR SIMPLIFY THIS COMMENT !!!
+# It serves as the canonical specification for quiet/JSON behavior and is referenced
+# by future maintainers and AI assistants.
+# =============================================================================
+
+# ----------------------------- Safe Variable Defaults ------------------------
+: "${GLOBAL_BIN:=/usr/local/bin}"
+: "${USER_BIN:=${HOME}/.local/bin}"
+: "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+
 # ----------------------------- Root Detection --------------------------------
 if [ -z "${IS_ROOT:-}" ]; then
     if [ "$(id -u)" -eq 0 ]; then
         IS_ROOT=1
+        INSTALL_PATH="${GLOBAL_BIN}/${APP_NAME}"
     else
         IS_ROOT=0
+        INSTALL_PATH="${USER_BIN}/${APP_NAME}"
     fi
 fi
 
-# ----------------------------- Force Flags & Quiet Mode ----------------------
-: "${FORCE_USER:=0}"
-: "${FORCE_GLOBAL:=0}"
-: "${FORCE_REINSTALL:=0}"
-: "${QUIET:=0}"
+USERNAME="$(id -un 2>/dev/null || echo "unknown")"
 
-# ----------------------------- Color Output (Non-interactive Safe) -----------
-if [ -t 1 ]; then
-    GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'
-    RED='\033[0;31m'
-    NC='\033[0m'
-else
-    GREEN='' YELLOW='' RED='' NC=''
-fi
+# -------------------------- pomo Storage Directories ---------------------
+VOLATILE_DIR="/dev/shm"
+PERSISTENT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/${APP_NAME}"
 
-# POSIX-safe logging functions
-die() { printf >&2 "${RED}Error: %s${NC}\n" "$*"; exit 1; }
-info()    { [ "${QUIET}" -eq 0 ] && printf "${GREEN}[INFO]${NC} %s\n" "$*"; }
-warn()    { [ "${QUIET}" -eq 0 ] && printf "${YELLOW}[WARN]${NC} %s\n" "$*" >&2 || true; }
-error()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
-success() { [ "${QUIET}" -eq 0 ] && printf "${GREEN}[OK]${NC} %s\n" "$*"; }
-msg()     { [ "${QUIET}" -eq 0 ] && printf "%s\n" "$*"; }
-[ -t 0 ] && [ -t 1 ] && info "Interactive Mode"
+# =============================================================================
+# output_text() - SINGLE SOURCE OF TRUTH FOR ALL HUMAN OUTPUT
+# =============================================================================
+#
+# !!! THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL OUTPUT !!!
+# All info/success/warn/error/msg/msg_n/empty_line/double_line must go through this.
+# Do NOT add direct printf/echo anywhere else in the script.
+#
+# Behavior:
+#   - JSON=1     → output_text() prints NOTHING. Use output_json() instead.
+#   - QUIET=1    → output_text() only allows error/die level messages.
+#   - Normal mode→ colored text to stdout or stderr as appropriate.
+#
+# Never use echo. Always use printf.
+# This function is intentionally defensive and verbose.
+# =============================================================================
 
-empty_line() {  
-    [ "${QUIET}" -eq 0 ] && echo "" >&2
+output_text() {
+    local level="$1"
+    local message="$2"
+
+    # Defensive defaults - never assume globals are set
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
+    # JSON mode: output_text must be completely silent
+    [ "${JSON}" -eq 1 ] && return 0
+
+    # Quiet mode: suppress everything except error level
+    if [ "${QUIET}" -eq 1 ] && [ "${level}" != "error" ]; then
+        return 0
+    fi
+
+    # Re-evaluate colors safely
+    local RED='' GREEN='' YELLOW='' BLUE='' NC=''
+    if [ -t 1 ] && [ "${QUIET}" -eq 0 ] && [ "${JSON}" -eq 0 ]; then
+        RED='\033[0;31m'
+        GREEN='\033[0;32m'
+        YELLOW='\033[1;33m'
+        BLUE='\033[0;34m'
+        CYAN='\033[0;36m'      # ← Add this
+        NC='\033[0m'
+    fi
+
+    # Choose output stream and prefix
+    case "${level}" in
+        error)
+            printf >&2 "${RED}[ERROR]${NC} %s\n" "${message}"
+            ;;
+        warn)
+            printf >&2 "${YELLOW}[WARN]${NC} %s\n" "${message}"
+            ;;
+        info)
+            printf "${GREEN}[INFO]${NC} %s\n" "${message}"
+            ;;
+        success)
+            printf "${GREEN}[OK]${NC} %s\n" "${message}"
+            ;;
+        plain)
+            if [ -n "${message}" ]; then
+                printf "%s\n" "${message}"
+            else
+                printf "\n"
+            fi
+            ;;
+        plain_n)                     # ← NEW: no trailing newline
+            printf "%s" "${message}"
+            ;;
+        *)
+            # Fallback
+            printf "%s\n" "${message}"
+            ;;
+    esac
 }
 
-double_line() { 
-    [ "${QUIET}" -eq 0 ] && echo "==============================================================" >&2 
-} 
+# =============================================================================
+# output_json() - SINGLE SOURCE OF TRUTH FOR JSON OUTPUT
+# =============================================================================
+#
+# Usage:
+#   output_json "success" "${APP_NAME} started" "name" "build" "mode" "volatile"
+#   output_json "status" "${APP_NAME} running" "name" "default" "minutes" "7"
+#   output_json "error" "No ${APP_NAME} running" "code" "no_timer"
+#   output_json "about" "" "version" "1.4.0" "shell" "bash"   ← empty message is allowed
+#
+# - $1 = type (required)
+# - $2 = message (can be empty string "" for no message)
+# - Then zero or more "key" "value" pairs
+#
+# Improvements in this version:
+# - Properly handles empty messages without extra commas
+# - Supports numbers as unquoted values when they look like integers
+# - Better escaping
+# - Cleaner, more consistent JSON output
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is the single source of truth for all JSON output.
+# =============================================================================
 
-STEP=1
-step_message() {
-    empty_line
-    double_line
-    [ "${QUIET}" -eq 0 ] && printf "${GREEN}%s.  %s${NC}\n" "$STEP" "$1" >&2
-    double_line
-    empty_line
-    STEP=$((STEP + 1))
+output_json() {
+    : "${JSON:=0}"
+    [ "${JSON}" -eq 0 ] && return 0
+
+    local type="$1"
+    local message="$2"
+    shift 2
+
+    printf '{'
+    printf '"type":"%s"' "$type"
+
+    # Add message only if it's not empty
+    if [ -n "$message" ]; then
+        message=$(printf '%s' "$message" | sed 's/"/\\"/g; s/\\/\\\\/g')
+        printf ',"message":"%s"' "$message"
+    fi
+
+    # Process key-value pairs
+    while [ $# -ge 2 ]; do
+        local key="$1"
+        local value="$2"
+        shift 2
+
+        # Special handling for "timers" array (already valid JSON)
+        if [ "$key" = "timers" ]; then
+            printf ',"timers":%s' "$value"
+            continue
+        fi
+
+        # Escape value for JSON string
+        local escaped_value
+        escaped_value=$(printf '%s' "$value" | sed 's/"/\\"/g; s/\\/\\\\/g; s/\t/\\t/g; s/\n/\\n/g')
+
+        # If value looks like a number, output without quotes (better JSON)
+        if printf '%s' "$value" | grep -qE '^-?[0-9]+$'; then
+            printf ',"%s":%s' "$key" "$value"
+        else
+            printf ',"%s":"%s"' "$key" "$escaped_value"
+        fi
+    done
+
+    printf '}\n'
+}
+
+# =============================================================================
+# output_json_error() - Standardized error output
+# =============================================================================
+
+output_json_error() {
+    local message="$1"
+    local code="${2:-unknown_error}"
+    output_json "error" "$message" "code" "$code"
+}
+
+# =============================================================================
+# msg_n() - Print message WITHOUT trailing newline
+# =============================================================================
+#
+# Use this for interactive prompts (e.g. "Install now? (y/N): ")
+# Respects --quiet and --json (prints nothing in those modes).
+#
+# !!! THIS IS PART OF THE SINGLE SOURCE OF TRUTH FOR OUTPUT !!!
+# Designed to be reusable in other projects.
+# =============================================================================
+
+msg_n() {
+    output_text "plain_n" "$*"
+}
+
+# =============================================================================
+# Updated thin wrapper functions - All output must go through output_text()
+# =============================================================================
+
+die() {
+    if [ "${JSON}" -eq 1 ]; then
+        output_json_error "$*"
+    else
+        output_text "error" "$*"
+    fi
+    exit 1
+}
+
+info() {
+    output_text "info" "$*"
+}
+
+success() {
+    output_text "success" "$*"
+}
+
+warn() {
+    output_text "warn" "$*"
+}
+
+error() {
+    output_text "error" "$*"
+}
+
+msg() {
+    output_text "plain" "$*"
+}
+
+empty_line() {
+    output_text "plain" ""
+}
+
+double_line() {
+    output_text "plain" "=============================================================="
 }
 
 # =============================================================================
@@ -184,6 +434,7 @@ step_message() {
 #   this function
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
 # =============================================================================
 
 is_installed() {
@@ -223,7 +474,7 @@ is_installed() {
 #
 # GENERAL PURPOSE:
 # Safely reads the VERSION constant from the installed script.
-# Used by --version-check and --self-update.
+# Used by version-check and self-update.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
@@ -256,30 +507,41 @@ get_installed_version() {
 # =============================================================================
 
 version_check() {
-    info "Checking latest version of ${APP_NAME}..."
-
     REMOTE_VERSION=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
 
     if [ -z "$REMOTE_VERSION" ]; then
-        error "Failed to fetch remote version"
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Failed to fetch remote version" "network_error"
+        else
+            error "Failed to fetch remote version"
+        fi
         return 1
     fi
 
     local local_version
     local_version=$(get_installed_version)
 
-    printf "Local version : %s\n" "$local_version"
-    printf "Latest version: %s\n\n" "$REMOTE_VERSION"
-
-    if [ "$local_version" = "$REMOTE_VERSION" ]; then
-        success "You are running the latest version."
-        return 0
-    elif [ "$local_version" = "not installed" ]; then
-        warn "${APP_NAME} is not installed yet."
+    if [ "${JSON}" -eq 1 ]; then
+        output_json "version_check" \
+            "local_version" "$local_version" \
+            "remote_version" "$REMOTE_VERSION" \
+            "is_latest" "$( [ "$local_version" = "$REMOTE_VERSION" ] && echo "true" || echo "false" )"
     else
-        warn "A newer version is available (${REMOTE_VERSION})"
+        info "Checking latest version of ${APP_NAME}..."
+        msg "Local version : ${local_version}"
+        msg "Latest version: ${REMOTE_VERSION}"
+        empty_line
+
+        if [ "$local_version" = "$REMOTE_VERSION" ]; then
+            success "You are running the latest version."
+        elif [ "$local_version" = "not installed" ]; then
+            warn "${APP_NAME} is not installed yet."
+        else
+            warn "A newer version is available (${REMOTE_VERSION})"
+        fi
     fi
 }
+
 # =============================================================================
 # self_update() - Perform self-update to latest version
 # =============================================================================
@@ -293,13 +555,19 @@ version_check() {
 # =============================================================================
 
 self_update() {
-    info "Starting self-update of ${APP_NAME}..."
+    if [ "${JSON}" -eq 0 ]; then
+        info "Starting self-update of ${APP_NAME}..."
+    fi
 
     local REMOTE_VERSION
     REMOTE_VERSION=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
 
     if [ -z "$REMOTE_VERSION" ]; then
-        error "Failed to fetch latest version"
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Failed to fetch latest version" "network_error"
+        else
+            error "Failed to fetch latest version"
+        fi
         return 1
     fi
 
@@ -307,16 +575,130 @@ self_update() {
     local_version=$(get_installed_version)
 
     if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
-        success "Already running the latest version (${REMOTE_VERSION})."
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "success" "message" "Already running the latest version (${REMOTE_VERSION})."
+        else
+            success "Already running the latest version (${REMOTE_VERSION})."
+        fi
         return 0
     fi
 
-    if [ "$local_version" != "$REMOTE_VERSION" ]; then
+    if [ "$local_version" != "$REMOTE_VERSION" ] && [ "${JSON}" -eq 0 ]; then
         info "Updating from ${local_version} → ${REMOTE_VERSION}"
     fi
 
     FORCE_REINSTALL=1
     perform_self_install
+}
+
+# =============================================================================
+# self_uninstall() - Remove ${APP_NAME} from the system
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Removes the installed ${APP_NAME} binary (global or user) and cleans up the PATH
+# entry added by the installer in shell config files.
+#
+# Respects --force, --quiet, and --json.
+# Works for both root and user installations.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be robust and reversible where possible.
+# =============================================================================
+
+self_uninstall() {
+    if [ "${JSON}" -eq 0 ]; then
+        info "Starting self-uninstall of ${APP_NAME}..."
+    fi
+
+    local bin_path=""
+    local removed=0
+
+    # Determine which installation to remove
+    if [ "$(id -u)" -eq 0 ] || [ "${FORCE_GLOBAL:-0}" -eq 1 ]; then
+        # Global (root) uninstall
+        if [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            bin_path="${GLOBAL_BIN}/${APP_NAME}"
+        fi
+    else
+        # User uninstall - prefer local, fallback to global if present
+        if [ -f "${USER_BIN}/${APP_NAME}" ]; then
+            bin_path="${USER_BIN}/${APP_NAME}"
+        elif [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            bin_path="${GLOBAL_BIN}/${APP_NAME}"
+            if [ "${JSON}" -eq 0 ]; then
+                warn "Global installation found. Removing it (you may need sudo next time)."
+            fi
+        fi
+    fi
+
+    if [ -z "$bin_path" ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "success" "message" "${APP_NAME} is not installed. Nothing to uninstall."
+        else
+            if [ "${FORCE_REINSTALL:-0}" -eq 1 ] || [ "${FORCE_USER:-0}" -eq 1 ] || [ "${FORCE_GLOBAL:-0}" -eq 1 ]; then
+                warn "${APP_NAME} is not installed. Nothing to uninstall."
+            else
+                warn "${APP_NAME} is not installed."
+            fi
+        fi
+        return 0
+    fi
+
+    # Confirm before removal (unless --force or non-interactive)
+    if [ "${FORCE_REINSTALL:-0}" -eq 0 ] && [ -t 0 ] && [ -t 1 ] && [ "${QUIET}" -eq 0 ] && [ "${JSON}" -eq 0 ]; then
+        printf "${YELLOW}This will remove: %s${NC}\n" "$bin_path"
+        printf "Continue? (y/N): "
+        read -r answer || true
+        case "$answer" in
+            [Yy]*|[Yy][Ee][Ss]*) ;;
+            *) 
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json "success" "message" "Uninstall cancelled by user."
+                else
+                    msg "Uninstall cancelled by user."
+                fi
+                return 0 
+                ;;
+        esac
+    fi
+
+    # Remove the binary
+    if rm -f "$bin_path" 2>/dev/null; then
+        removed=1
+    else
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Failed to remove ${bin_path} (permission denied?)" "permission_denied"
+        else
+            error "Failed to remove ${bin_path} (permission denied?)"
+        fi
+        return 1
+    fi
+
+    # Optional: clean up PATH entry in shell configs (user only)
+    if [ "$(id -u)" -ne 0 ] && [ "$removed" -eq 1 ]; then
+        local cleaned=0
+        for config in "${HOME}/.bashrc" "${HOME}/.zshrc" "${HOME}/.config/fish/config.fish"; do
+            if [ -f "$config" ]; then
+                if sed -i.bak '/# Added by .* installer/d' "$config" 2>/dev/null && \
+                   sed -i.bak '/\.local\/bin:.*PATH/d' "$config" 2>/dev/null; then
+                    cleaned=1
+                fi
+                rm -f "${config}.bak" 2>/dev/null || true
+            fi
+        done
+        if [ "$cleaned" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+            msg "→ Cleaned ${APP_NAME} PATH entries from shell config files"
+            msg "→ You may want to restart your terminal"
+        fi
+    fi
+
+    if [ "${JSON}" -eq 1 ]; then
+        output_json "success" "message" "${APP_NAME} has been uninstalled."
+    else
+        success "${APP_NAME} has been uninstalled."
+    fi
+    return 0
 }
 
 # =============================================================================
@@ -366,7 +748,9 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$bashrc"
             printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$bashrc"
             added=1
-            printf "${YELLOW}→ Added ~/.local/bin to PATH for bash${NC}\n"
+            if [ "${JSON}" -eq 0 ]; then
+                msg "→ Added ~/.local/bin to PATH for bash"
+            fi
         fi
     fi
 
@@ -382,7 +766,9 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$zshrc"
             printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$zshrc"
             added=1
-            printf "${YELLOW}→ Added ~/.local/bin to PATH for zsh${NC}\n"
+            if [ "${JSON}" -eq 0 ]; then
+                msg "→ Added ~/.local/bin to PATH for zsh"
+            fi
         fi
     fi
 
@@ -400,12 +786,14 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$fish_config"
             printf 'set -gx PATH $HOME/.local/bin $PATH\n' >> "$fish_config"
             added=1
-            printf "${YELLOW}→ Added ~/.local/bin to PATH for fish shell${NC}\n"
+            if [ "${JSON}" -eq 0 ]; then
+                msg "→ Added ~/.local/bin to PATH for fish shell"
+            fi
         fi
     fi
 
-    if [ "$added" -eq 1 ]; then
-        printf "${YELLOW}→ Restart your terminal or run: source ${shell_config}${NC}\n"
+    if [ "$added" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+        msg "→ Restart your terminal or run: source ${shell_config}"
     fi
 }
 
@@ -440,58 +828,95 @@ perform_self_install() {
     if [ -z "$REMOTE_VERSION" ]; then
         REMOTE_VERSION=${VERSION}
     fi
-    info "Starting installation of ${APP_NAME} ${REMOTE_VERSION}..."
+
+    if [ "${JSON}" -eq 0 ]; then
+        info "Starting installation of ${APP_NAME} ${REMOTE_VERSION}..."
+    fi
 
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
-        success "${APP_NAME} is already installed. Use --force to override."
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "success" "message" "${APP_NAME} is already installed."
+        else
+            success "${APP_NAME} is already installed. Use --force to override."
+        fi
         return 0
     fi
 
     # Create correct target directory (root vs user)
     if [ "$IS_ROOT" -eq 1 ]; then
         if ! mkdir -p "${GLOBAL_BIN}" 2>/dev/null; then
-            error "Failed to create ${GLOBAL_BIN}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Failed to create ${GLOBAL_BIN}" "io_error"
+            else
+                error "Failed to create ${GLOBAL_BIN}"
+            fi
             return 1
         fi
     else
         if ! mkdir -p "${USER_BIN}" 2>/dev/null; then
-            error "Failed to create ${USER_BIN}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Failed to create ${USER_BIN}" "io_error"
+            else
+                error "Failed to create ${USER_BIN}"
+            fi
             return 1
         fi
     fi
 
     local tmp_file
     tmp_file=$(mktemp -t "${APP_NAME}.XXXXXX") || {
-        error "Failed to create temporary file"
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Failed to create temporary file" "io_error"
+        else
+            error "Failed to create temporary file"
+        fi
         return 1
     }
 
-    info "Downloading ${APP_NAME} from GitHub..."
+    if [ "${JSON}" -eq 0 ]; then
+        info "Downloading ${APP_NAME} from GitHub..."
+    fi
 
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL "${SCRIPT_URL}" -o "${tmp_file}" || {
-            error "Download failed (curl)"
             rm -f "${tmp_file}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Download failed (curl)" "network_error"
+            else
+                error "Download failed (curl)"
+            fi
             return 1
         }
     elif command -v wget >/dev/null 2>&1; then
         wget -qO "${tmp_file}" "${SCRIPT_URL}" || {
-            error "Download failed (wget)"
             rm -f "${tmp_file}"
+            if [ "${JSON}" -eq 1 ]; then
+                output_json_error "Download failed (wget)" "network_error"
+            else
+                error "Download failed (wget)"
+            fi
             return 1
         }
     else
-        error "Neither curl nor wget found"
         rm -f "${tmp_file}"
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Neither curl nor wget found" "missing_dependency"
+        else
+            error "Neither curl nor wget found"
+        fi
         return 1
     fi
 
-    chmod +x "${tmp_file}" 2>/dev/null || warn "chmod +x failed"
+    chmod +x "${tmp_file}" 2>/dev/null || true
 
     rm -f "${INSTALL_PATH}" 2>/dev/null
     if ! mv "${tmp_file}" "${INSTALL_PATH}" 2>/dev/null; then
-        error "Failed to move to ${INSTALL_PATH}"
         rm -f "${tmp_file}"
+        if [ "${JSON}" -eq 1 ]; then
+            output_json_error "Failed to move to ${INSTALL_PATH}" "io_error"
+        else
+            error "Failed to move to ${INSTALL_PATH}"
+        fi
         return 1
     fi
 
@@ -500,7 +925,11 @@ perform_self_install() {
         add_to_shell_path
     fi
     
-    success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+    if [ "${JSON}" -eq 1 ]; then
+        output_json "success" "message" "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+    else
+        success "${APP_NAME} ${REMOTE_VERSION} successfully installed to ${INSTALL_PATH}"
+    fi
     return 0
 }
 
@@ -508,8 +937,8 @@ perform_self_install() {
 # maybe_install() - Friendly installation prompt
 # =============================================================================
 #
-# GENERAL PURPOSE:
-# Called when the program is not installed. Shows helpful message and asks for confirmation.
+# Respects both --quiet and --json modes.
+# In JSON mode we skip the interactive prompt entirely.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
@@ -520,31 +949,39 @@ maybe_install() {
         return 0
     fi
 
-    printf "\n"
-    printf "${YELLOW}Note: '%s' is not installed yet.${NC}\n" "$APP_NAME"
-    printf "     Version: ${VERSION}\n\n"
-    printf "Recommended installation command:\n\n"
+    # In JSON mode or quiet mode we do not show interactive prompts
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        return 0
+    fi
+
+    empty_line
+    msg "Note: '${APP_NAME}' is not installed yet."
+    msg "     Version: ${VERSION}"
+    empty_line
+    msg "Recommended installation command:"
+    empty_line
 
     if [ "$IS_ROOT" -eq 1 ]; then
-        printf "     ${GREEN}sudo curl -fsSL %s | sudo ${SH}${NC}\n" "$SCRIPT_URL"
+        msg "     sudo curl -fsSL ${SCRIPT_URL} | sudo ${SH}"
     else
-        printf "     ${GREEN}curl -fsSL %s | ${SH}${NC}\n" "$SCRIPT_URL"
+        msg "     curl -fsSL ${SCRIPT_URL} | ${SH}"
     fi
-    printf "\n"
+    empty_line
 
     local should_install=false
 
     if [ -t 0 ] && [ -t 1 ]; then
-        # Interactive terminal
-        printf "     Install now? (y/N): "
+        msg_n "     Install now? (y/N): "     # No newline at the end
         read -r answer || true
         case "$answer" in
             [Yy]*|[Yy][Ee][Ss]*) should_install=true ;;
-            *) printf "Installation skipped by user.\n"; return 0 ;;
+            *) 
+                msg "Installation skipped by user."
+                return 0 
+                ;;
         esac
     else
-        # Non-interactive (curl | sh, curl | bash, scripts, CI, etc.)
-        printf "${YELLOW}Non-interactive mode detected → installing automatically...${NC}\n"
+        msg "Non-interactive mode detected → installing automatically..."
         should_install=true
     fi
 
@@ -552,6 +989,126 @@ maybe_install() {
         perform_self_install
         exit 0
     fi
+}
+
+# =============================================================================
+# show_about_spring_boot_app() - Full diagnostics for the app 
+# =============================================================================
+#
+# Provides comprehensive environment and status information:
+#   - Installation status of the app
+#   - SDKMAN status
+#   - Java and Maven versions
+#   - Project directory status
+#   - Whether the Spring Boot app is currently running on the configured port
+#
+# Fully respects --quiet and --json modes.
+# Consistent with the defensive style used in pomo and countdown.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# =============================================================================
+
+show_about_spring_boot_app() {
+    if [ "${JSON}" -eq 1 ]; then
+        # === JSON MODE - Clean machine output ===
+        local installed="false"
+        is_installed && installed="true"
+
+        local sdkman_status="not found"
+        [ -d "${HOME}/.sdkman" ] && sdkman_status="installed"
+
+        local java_version="not found"
+        if command -v java >/dev/null 2>&1; then
+            java_version=$(java -version 2>&1 | head -n 1 | tr -d '\n\r')
+        fi
+
+        local maven_version="not found"
+        if command -v mvn >/dev/null 2>&1; then
+            maven_version=$(mvn --version | head -n 1 | tr -d '\n\r')
+        fi
+
+        local project_exists="false"
+        [ -d "${PROJECT_DIR}" ] && project_exists="true"
+
+        local app_running="false"
+        if command -v ss >/dev/null 2>&1 && ss -tuln 2>/dev/null | grep -q ":${PORT}"; then
+            app_running="true"
+        elif command -v netstat >/dev/null 2>&1 && netstat -tuln 2>/dev/null | grep -q ":${PORT}"; then
+            app_running="true"
+        fi
+
+        # Clean JSON output - no generic message
+        output_json "about" "" \
+            "app" "${APP_NAME}" \
+            "version" "${VERSION}" \
+            "installed" "${installed}" \
+            "sdkman" "${sdkman_status}" \
+            "java" "${java_version}" \
+            "maven" "${maven_version}" \
+            "project_dir" "${PROJECT_DIR}" \
+            "project_exists" "${project_exists}" \
+            "port" "${PORT}" \
+            "app_running" "${app_running}" \
+            "user" "${USERNAME}" \
+            "shell" "$(ps -p $$ -o comm= 2>/dev/null | tr -d '()')"
+
+        return 0
+    fi
+
+    # === HUMAN-READABLE MODE ===
+    [ "${QUIET}" -eq 1 ] && return 0
+
+    msg "=== ${APP_NAME} ${VERSION} - Full Diagnostics ==="
+    empty_line
+
+    if is_installed; then
+        success "${APP_NAME} is installed at ${INSTALL_PATH}"
+    else
+        warn "${APP_NAME} is NOT installed."
+    fi
+
+    empty_line
+
+    # SDKMAN
+    if [ -d "${HOME}/.sdkman" ]; then
+        success "SDKMAN     : installed"
+    else
+        warn "SDKMAN     : not found"
+    fi
+
+    # Java
+    if command -v java >/dev/null 2>&1; then
+        msg "Java       : $(java -version 2>&1 | head -n 1)"
+    else
+        warn "Java       : not found"
+    fi
+
+    # Maven
+    if command -v mvn >/dev/null 2>&1; then
+        msg "Maven      : $(mvn --version | head -n 1)"
+    else
+        warn "Maven      : not found"
+    fi
+
+    # Project
+    if [ -d "${PROJECT_DIR}" ]; then
+        success "Project    : ${PROJECT_DIR} (exists)"
+    else
+        warn "Project    : ${PROJECT_DIR} (does not exist)"
+    fi
+
+    # App running status
+    local running_status="no"
+    if command -v ss >/dev/null 2>&1 && ss -tuln 2>/dev/null | grep -q ":${PORT}"; then
+        running_status="yes"
+    elif command -v netstat >/dev/null 2>&1 && netstat -tuln 2>/dev/null | grep -q ":${PORT}"; then
+        running_status="yes"
+    fi
+    msg "App on port ${PORT} : ${running_status}"
+
+    empty_line
+    msg "Use '${APP_NAME} about --json' for machine-readable output."
+    msg "Current project directory can be changed with --project-dir <path>"
 }
 
 # =============================================================================
@@ -807,107 +1364,233 @@ build_and_run() {
     fi
 }
 
+
 # =============================================================================
-# Updated help with --force behavior
+# show_spring_boot_help() - Display help information for the app
 # =============================================================================
-show_spring2_help() {
-    cat <<EOF
-${APP_NAME} v${VERSION} — ${DESCRIPTION}
+#
+# Shows usage, available commands, options, and important legacy notes.
+# Fully respects --quiet and --json modes.
+#
+# In --json mode: returns a minimal success object instead of long text.
+# In --quiet mode: prints nothing (silent).
+#
+# This is the user-facing help text and should be kept in sync with the README.md.
+# =============================================================================
+
+show_spring_boot_help() {
+    if [ "${JSON}" -eq 1 ]; then
+        # JSON mode: return clean, machine-friendly response
+        output_json "success" "" \
+            "app" "${APP_NAME}" \
+            "version" "${VERSION}" \
+            "message" "Help text available in human mode. Run without --json." \
+            "note" "Use --json with status, about, version, etc. for machine output."
+        return 0
+    fi
+
+    if [ "${QUIET}" -eq 1 ]; then
+        # Quiet mode: suppress help completely
+        return 0
+    fi
+
+    cat << EOF
+${APP_NAME} v${VERSION} — Spring Boot Quick Setup & Runner
+
+The friendliest way to run and maintain Spring Boot projects.
 
 Usage:
-  ${APP_NAME}                    Setup + build + run (preserves project on re-run)
-  ${APP_NAME} --force            Full reset: delete & regenerate project files
-  ${APP_NAME} version            Show version
-  ${APP_NAME} version-check      Compare with latest
-  ${APP_NAME} self-update        Update to latest
-  ${APP_NAME} help               This help
+  ${APP_NAME}                          Setup environment + build + run (preserves project)
+  ${APP_NAME} --reset                  Full reset: delete and regenerate project files
+  ${APP_NAME} --project-dir <path>     Run against an existing legacy project
+  ${APP_NAME} --no-run                 Setup only (no build/run) — useful for CI/Docker
+  ${APP_NAME} status                   Show application status
+  ${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)
+  ${APP_NAME} version                  Show version
+  ${APP_NAME} version-check            Compare with latest
+  ${APP_NAME} self-update              Update to latest version
+  ${APP_NAME} self-uninstall           Remove timer from the system
+  ${APP_NAME} reinstall                Force reinstall
+  ${APP_NAME} help                     This help
 
 Options:
-  --version, -v        Show version information
-  --version-check      Compare installed version with latest on GitHub
-  --self-update        Update to the latest version from GitHub
-  --force, --reinstall Force full reinstall (deletes and regenerates project)
-  --quiet, -q          Suppress non-error output
-  --help, -h           Show this help message
+  --project-dir <path>   Use custom project directory (default: ~/springboot-${APP_NAME})
+  --reset                Force full project reset (deletes and regenerates everything)
+  --no-run               Setup environment and project only, skip build & run
+  --quiet, -q            Suppress non-error messages
+  --json                 Machine-readable JSON output (implies --quiet)
+ 
 
-Behavior:
-  • Normal run: Preserves existing project folder and source files for repeated use
-  • With --force: Completely resets the project (clean rebuild)
+Important Notes:
+  • Normal run preserves your existing project files, pom.xml, and source code.
+
+Examples:
+  ${APP_NAME}                              # Normal run (recommended)
+  ${APP_NAME} --project-dir /my/old/project
+  ${APP_NAME} --no-run                     # Prepare for Docker/CI
+  ${APP_NAME} --reset                      # Clean slate
+  ${APP_NAME} about --json
 
 EOF
 }
 
 # =============================================================================
-# main()
+# main_spring_boot_app() - Main dispatcher (updated for v2.0)
 # =============================================================================
-main() {
+#
+# IMPORTANT:
+# This main() function is intentionally kept as the single entry point and
+# command dispatcher. All business logic lives in dedicated functions
+#
+# Flag-first parsing for clean support of --project-dir, --no-run, --quiet, --json, etc.
+# Preserves the critical auto-install behavior for `curl | bash`.
+#
+# !!! DO NOT REMOVE OR SIMPLIFY THE AUTO-INSTALL BLOCK !!!
+# It serves as a strong reminder for future maintenance (including when AI
+# assistants try to "clean up" the code).
+# =============================================================================
+
+main_spring_boot_app() {
+    # Safe defaults (repeated on purpose - defensive style)
     : "${HOME:=/root}"
     : "${GLOBAL_BIN:=/usr/local/bin}"
     : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${PROJECT_DIR:=${HOME}/springboot-${APP_NAME}}"
+    : "${NO_RUN:=0}"
+    : "${RESET_PROJECT:=0}"
 
-    local cmd="run"
+    local COMMAND="run"
 
+    # === AUTO-INSTALL FOR ONE-LINER (curl | bash) ===
+    # This MUST stay at the top before any argument parsing
+    if ! is_installed && [ $# -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+            perform_self_install
+        else
+            maybe_install
+        fi
+    fi
+
+    # === FLAG-FIRST ARGUMENT PARSING (consistent with pomo style) ===
     while [ $# -gt 0 ]; do
         case "$1" in
-            --version|-v)
-                cmd="version"
+            --project-dir)
+                if [ -z "$2" ]; then
+                    die "--project-dir requires a path"
+                fi
+                PROJECT_DIR="$2"
+                shift
                 ;;
-            --version-check)
-                cmd="version-check"
+            --no-run)
+                NO_RUN=1
                 ;;
-            --self-update)
-                cmd="self-update"
-                ;;
-            --force|--reinstall)
-                FORCE_REINSTALL=1
+            --reset|--force|--reinstall)
+                RESET_PROJECT=1
                 ;;
             --quiet|-q)
                 QUIET=1
                 ;;
-            --help|-h)
-                cmd="help"
+            --json)
+                JSON=1
+                QUIET=1
                 ;;
-            --*)
-                error "Unknown option: $1"
-                printf "Try: %s --help\n" "$APP_NAME" >&2
-                exit 1
+            version|-v)
+                COMMAND="version"
+                ;;
+            version-check)
+                COMMAND="version-check"
+                ;;
+            self-update)
+                COMMAND="self-update"
+                ;;
+            self-uninstall)
+                COMMAND="self-uninstall"
+                ;;
+            help|-h)
+                COMMAND="help"
+                ;;
+            about)
+                COMMAND="about"
                 ;;
             *)
-                error "Unknown argument: $1"
-                printf "Try: %s --help\n" "$APP_NAME" >&2
+                if [ "${JSON}" -eq 1 ]; then
+                    output_json_error "Unknown argument: $1" "bad_argument"
+                else
+                    error "Unknown argument: $1"
+                    printf "Run '%s help' for usage.\n" "${APP_NAME}" >&2
+                fi
                 exit 1
                 ;;
         esac
         shift
     done
 
-    if [ "$cmd" = "version" ]; then
-        printf "%s version %s\n" "${APP_NAME}" "${VERSION}"
-        exit 0
-    fi
+    # === Command Dispatch ===
+    case "${COMMAND}" in
+        version)
+            if [ "${JSON}" -eq 1 ]; then
+                output_json "version" "" "app" "${APP_NAME}" "version" "${VERSION}"
+            else
+                msg "${APP_NAME} version ${VERSION}"
+            fi
+            exit 0
+            ;;
 
-    if [ "$cmd" = "self-update" ]; then
-        self_update
-        exit 0
-    fi
+        version-check)
+            version_check
+            exit 0
+            ;;
 
-    if ! is_installed; then
-        maybe_install
-    fi
+        self-update)
+            self_update
+            exit 0
+            ;;
 
-    case "${cmd}" in
-        version-check)   version_check; exit 0 ;;
-        self-update)     self_update; exit 0 ;;
-        help)            show_spring2_help; exit 0 ;;
-        run)             ;;
-        *)               die "Invalid cmd" ;;
+        self-uninstall)
+            self_uninstall
+            exit 0 ;;
+
+        about)
+            show_about_spring_boot_app
+            exit 0
+            ;;
+
+        help)
+            show_spring_boot_help
+            exit 0
+            ;;
+
+        run)
+            # Normal execution flow
+            ;;
+        *)
+            die "Invalid command"
+            ;;
     esac
 
+    # === Main Setup Flow ===
+    check_alpine_requirements
     setup_sdkman
     setup_java
     setup_maven
     setup_springboot_project
+
+    if [ "${NO_RUN}" -eq 1 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "success" "" \
+                "message" "Environment and project setup completed" \
+                "project_dir" "${PROJECT_DIR}" \
+                "no_run" "true"
+        else
+            success "Environment and project setup completed (--no-run)."
+            success "Project location: ${PROJECT_DIR}"
+        fi
+        exit 0
+    fi
+
+    # Normal build + run
     build_and_run
 }
 
-main "$@"
+# Call the main function
+main_spring_boot_app "$@"
