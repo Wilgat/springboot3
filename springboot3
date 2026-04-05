@@ -1140,7 +1140,6 @@ check_alpine_requirements() {
 }
 
 setup_sdkman() {
-    step_message "Checking SDKMAN..."
     check_alpine_requirements
     if [ -d "${HOME}/.sdkman" ] && command -v sdk >/dev/null 2>&1; then
         info "SDKMAN already installed."
@@ -1167,7 +1166,6 @@ setup_sdkman() {
 }
 
 setup_java() {
-    step_message "Setting up Java ..."
     info "Setting up ${JAVA_NAME}..."
     sdk install java "${JAVA_ID}" </dev/null || die "Java install failed"
     sdk default java "${JAVA_ID}" >/dev/null 2>&1
@@ -1176,7 +1174,6 @@ setup_java() {
 }
 
 setup_maven() {
-    step_message "Setting up Maven ..."
     info "Setting up Maven ${MAVEN_VER}..."
     sdk install maven "${MAVEN_VER}" </dev/null || die "Maven install failed"
     sdk default maven "${MAVEN_VER}" >/dev/null 2>&1
@@ -1197,8 +1194,6 @@ write_file_atomic() {
 # setup_springboot_project() - Fixed ultra-defensive version
 # =============================================================================
 setup_springboot_project() {
-    step_message "Setting up Spring Boot project ..."
-
     info "Preparing Spring Boot ${SPRINGBOOT_VER} demo → ${PROJECT_DIR}"
 
     if [ -d "${PROJECT_DIR}" ]; then
@@ -1331,8 +1326,6 @@ EOF
 # build_and_run() - Ultra-defensive version with repeated safe defaults
 # =============================================================================
 build_and_run() {
-    step_message "Building and running ..."
-
     info "Building project with Maven..."
 
     mvn clean package -DskipTests || {
@@ -1435,6 +1428,88 @@ EOF
 }
 
 # =============================================================================
+# source_user_shell_config() - Safely source user shell configuration
+# =============================================================================
+#
+# Purpose:
+#   Many sub-commands (about, version, status, build & run, etc.) are executed
+#   in a non-interactive, non-login shell.
+#
+#   In such shells, ~/.bashrc (and other user config files) are usually NOT
+#   sourced automatically. This causes problems when users have important
+#   settings in their ~/.bashrc such as:
+#     - PATH modifications
+#     - SDKMAN initialization
+#     - Custom environment variables
+#     - Aliases or functions
+#
+#   This function ensures the user's normal shell environment is available
+#   for all meaningful operations of springboot3.
+#
+# Why this is needed:
+#   - The main "curl | bash" install runs in a clean shell.
+#   - Sub-commands like "springboot3 about" or "springboot3" (normal run)
+#     must respect the user's configured environment.
+#   - SDKMAN users especially need sdkman-init.sh to be loaded.
+#
+# Design choices (defensive):
+#   - Only sources once (avoids double sourcing issues)
+#   - Skips completely in --quiet and --json modes (clean output)
+#   - Tries common config files in sensible order
+#   - Suppresses all output and errors during sourcing (never breaks script)
+#   - Always succeeds (return 0) so it never breaks the main flow
+#   - Special handling for SDKMAN because it is critical for this script
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This function protects user environment consistency across all sub-commands.
+# It is intentionally verbose with heavy comments following CIAO style.
+# =============================================================================
+
+source_user_shell_config() {
+    # Defensive safe defaults - repeated on purpose
+    : "${QUIET:=0}"
+    : "${JSON:=0}"
+
+    # Never source in machine modes - keeps output clean and predictable
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        return 0
+    fi
+
+    local sourced=0
+    local config_file=""
+
+    # Try common user shell configuration files in logical order
+    # bash is most common for this script, then fallback to others
+    for config_file in \
+        "${HOME}/.bashrc" \
+        "${HOME}/.bash_profile" \
+        "${HOME}/.profile" \
+        "${HOME}/.zshrc"; do
+
+        if [ -f "${config_file}" ] && [ -r "${config_file}" ]; then
+            # Source safely - never let errors stop the script
+            if source "${config_file}" 2>/dev/null; then
+                sourced=1
+                # Do not print anything by default (keeps output clean)
+                # You can uncomment the next line during debugging:
+                # info "Sourced user shell config: ${config_file}"
+                break   # Only source the first valid file to avoid conflicts
+            fi
+        fi
+    done
+
+    # Special handling for SDKMAN - critical for Java/Maven availability
+    # Many users rely on SDKMAN being initialized in their normal shell
+    local sdk_init="${HOME}/.sdkman/bin/sdkman-init.sh"
+    if [ -s "${sdk_init}" ]; then
+        # Source silently - failure is acceptable
+        source "${sdk_init}" 2>/dev/null || true
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # main_spring_boot_app() - Main dispatcher (updated for v2.0)
 # =============================================================================
 #
@@ -1459,6 +1534,11 @@ main_spring_boot_app() {
     : "${NO_RUN:=0}"
     : "${RESET_PROJECT:=0}"
 
+    # <<< IMPORTANT: Source user shell configuration >>>
+    # This must happen early so that PATH, SDKMAN, and user environment
+    # are available for ALL sub-commands (about, run, version-check, etc.)
+    source_user_shell_config
+    
     local COMMAND="run"
 
     # === AUTO-INSTALL FOR ONE-LINER (curl | bash) ===
