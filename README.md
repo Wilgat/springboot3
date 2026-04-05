@@ -1,6 +1,3 @@
-Here's the **complete, polished `README.md`** for your **springboot3** project, written in the same style and structure as the updated `springboot2` README you approved earlier.
-
-```markdown
 # springboot3
 
 <img src="https://img.shields.io/badge/Version-1.5.0-blue?style=flat-square" alt="Version">  
@@ -24,7 +21,7 @@ Here's the **complete, polished `README.md`** for your **springboot3** project, 
 - Creates a clean minimal Spring Boot 3.3.5 "Hello World" project
 - **Project preservation by default** — re-runs keep your existing files (use `--force` to reset)
 - Self-installing, self-updating (`--self-update`), and version checking
-- `--force` / `--reinstall`, `--quiet` support
+- `--force` / `--reinstall`, `--quiet`, `--json` support
 - Multi-shell PATH setup (bash, zsh, fish)
 - Extremely defensive coding style with repeated safe defaults
 
@@ -95,77 +92,22 @@ Fully supported with defensive fallbacks for SDKMAN! sourcing and PATH setup.
 
 ---
 
-## Program Structure (for curious people)
+## Project Philosophy
 
-The script is intentionally kept **linear**, highly readable, and **extremely defensive** following the strict "ciao" coding style.
+This script is part of the **springboot2 / springboot3 / springboot4** series.  
+Each tool is intentionally maintained with its own pinned Spring Boot version to give users stable, reproducible environments for different needs (legacy, standard, or latest).
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Header + Warnings + Project Constants                      │
-│  (APP_NAME, VERSION, SCRIPT_URL, JAVA_ID, etc.)             │
-├─────────────────────────────────────────────────────────────┤
-│  Safe Variable Defaults (repeated on purpose)               │
-│  Root Detection (IS_ROOT)                                   │
-│  Force Flags & Quiet Mode                                   │
-├─────────────────────────────────────────────────────────────┤
-│  Color Output + Logging Functions (die, info, warn, etc.)   │
-├─────────────────────────────────────────────────────────────┤
-│  Core Utility Functions                                     │
-│   • is_installed()            ← robust install detection    │
-│   • get_installed_version()                                 │
-│   • version_check()                                         │
-│   • self_update()                                           │
-│   • in_path() + add_to_shell_path()                         │
-├─────────────────────────────────────────────────────────────┤
-│  Installation Logic                                         │
-│   • perform_self_install()    ← heart of self-install       │
-│   • maybe_install()           ← interactive + auto-install  │
-├─────────────────────────────────────────────────────────────┤
-│  SDKMAN + Java + Maven Setup                                │
-│   • check_alpine_requirements()                             │
-│   • setup_sdkman()                                          │
-│   • setup_java()                                            │
-│   • setup_maven()                                           │
-├─────────────────────────────────────────────────────────────┤
-│  Project Management                                         │
-│   • setup_springboot_project()                              │
-│        ├── Preserves project by default                     │
-│        └── Full reset with --force / --reinstall            │
-├─────────────────────────────────────────────────────────────┤
-│  Build & Run                                                │
-│   • build_and_run()           ← ultra-defensive build + exec│
-├─────────────────────────────────────────────────────────────┤
-│  Help & Main Entry Point                                    │
-│   • show_spring3_help()                                     │
-│   • main()                                                  │
-│        ├── Argument parsing                                 │
-│        ├── Special handlers (--version, --self-update, etc.)│
-│        ├── maybe_install() if needed                        │
-│        └── Full setup flow                                  │
-└─────────────────────────────────────────────────────────────┘
-```
+**Spring Boot 3.3.5** is deliberately kept in this project. As of April 2026, newer versions (including 4.0.x) exist, but this script stays on 3.3.5 by design.
 
-This structure makes the script easy to understand, copy, and adapt while protecting critical functions with heavy comments and warnings.
+The script follows the strict **ciao defensive coding style** with heavy comments and `!!! DO NOT MODIFY OR SIMPLIFY !!!` blocks to survive harsh environments and protect against accidental "cleaning".
 
 ---
 
 ## Why the Heavy Defensive Style?
 
-This project strictly follows the **ciao defensive coding style**:
-- Repeated safe defaults (`: "${VAR:=default}"`)
-- Redundant root / environment checks
-- Heavy inline comments and `!!! DO NOT MODIFY OR SIMPLIFY !!!` blocks
-
-**Purpose**:
-- Survive harsh environments (`curl | bash`, non-interactive shells, missing `$HOME`, Alpine ash, Git Bash, etc.)
-- Protect against accidental "cleaning" by AI assistants or contributors
-- Serve as a reliable template for other defensive tools in the Wilgat family
-
----
-
-## Project Philosophy
-
-> "Write code that is easy to copy, hard to break, and self-documenting."
+- Survive `curl | bash`, non-interactive shells, missing `$HOME`, Alpine ash, Git Bash, etc.
+- Protect against well-meaning simplifications by AI assistants or contributors
+- Serve as a reliable, copy-paste friendly template for other tools in the Wilgat family
 
 ---
 
@@ -178,12 +120,3 @@ Please respect the strict defensive coding style and protective comments when su
 ## License
 
 MIT
-
----
-
-**Part of the Wilgat defensive tool family.**  
-*Last updated: April 2026*
-
----
-
-**Note**: Spring Boot 3.3.5 is a current stable release (as of April 2026) with active community and commercial support. This tool provides a quick, reproducible way to spin up a minimal Spring Boot 3 + Java 21 application.
