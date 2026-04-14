@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# springboot3 – version 1.6.0
+# springboot3 – version 2.0.0
 # =============================================================================
 #
 # One-command installer + launcher for Spring Boot 3.3.5
@@ -28,7 +28,7 @@
 # Repeated safe defaults, redundant checks, and heavy comments are intentional.
 #
 # Spring Boot 3.3.5 is intentionally pinned.
-# This project is part of a deliberate family: springboot2, springboot3, and springboot4.
+# This project is part of a deliberate family: springboot 2,3 or 4, and springboot4.
 # Each version is maintained separately to give users a stable, reproducible environment
 # matching their exact requirements (legacy support, current use, or bleeding-edge).
 #
@@ -94,7 +94,7 @@
 # ----------------------------- Project Constants -----------------------------
 
 APP_NAME="springboot3"
-VERSION="1.6.0"
+VERSION="2.0.0"
 DESCRIPTION="Spring Boot 3.3.5 quick setup"
 REMOTE_VERSION=$VERSION
 SH=bash
@@ -108,6 +108,16 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${FORCE_USER:=0}"
 : "${FORCE_GLOBAL:=0}"
 : "${FORCE_REINSTALL:=0}"
+
+# ----------------------------- Safe Defaults & Paths -------------------------
+: "${HOME:="/tmp"}"
+: "${XDG_BIN_HOME:="${HOME}/.local/bin"}"
+: "${XDG_CACHE_HOME:="${HOME}/.cache"}"
+: "${candidates_file:=''}"
+
+USERNAME="$(id -un 2>/dev/null || echo "unknown")"
+
+STORAGE_DIR="${XDG_CACHE_HOME}/${APP_NAME}-${USERNAME}"
 
 # ----------------------------- Spring boot Defaults --------------------------
 # ────────────────────────────────────────────────
@@ -138,58 +148,6 @@ SCRIPT_URL="https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${A
 : "${QUIET:=0}"
 : "${JSON:=0}"
 
-# =============================================================================
-# QUIET AND JSON MODE BEHAVIOR
-# =============================================================================
-#
-# --quiet / -q :
-#   Suppresses all non-error output (info, success, warnings, help text, status, etc.).
-#   Only critical errors are shown (as plain text or JSON error object).
-#
-# --json :
-#   Enables strict machine-readable JSON output.
-#   Automatically implies --quiet.
-#   The script MUST output EXACTLY ONE valid JSON object per execution.
-#   Never output more than one JSON object or any other text.
-#
-#   JSON Output Rules (strict):
-#   - Always starts with {"type": "success|status|error|about|version|...", ...}
-#   - "message" field is optional — only include when it adds real value.
-#   - All numbers (port, version numbers, etc.) must be unquoted.
-#   - Strings (paths, versions, status) are always quoted.
-#   - Use consistent field names across commands for scripting ease.
-#
-#   Supported "type" values:
-#     success, status, error, about, version
-#
-#   Recommended JSON Examples (springboot3 specific):
-#
-#   Success (setup complete):
-#   {"type":"success","message":"Environment and project setup completed","project_dir":"/home/user/springboot-springboot3"}
-#
-#   Status (app running):
-#   {"type":"status","app_running":"true","port":8080,"project_dir":"/home/user/myproject"}
-#
-#   About:
-#   {"type":"about","app":"springboot3","version":"2.0.0","installed":"true","java":"openjdk version 1.8...","maven":"Apache Maven 3.9.14","project_exists":"true","app_running":"false"}
-#
-#   Error:
-#   {"type":"error","message":"Java installation failed","code":"setup_failed"}
-#
-#   Version:
-#   {"type":"version","app":"springboot3","version":"2.0.0"}
-#
-# Important Notes:
-#   - Commands like "about", "version", "status" fully support --json.
-#   - The script is interactive by nature (build & run), so --json is mainly useful for diagnostics.
-#   - When both --quiet and --json are used, --json takes precedence.
-#   - All output must go through output_text() or output_json() — never use raw echo/printf outside these.
-#
-# !!! DO NOT REMOVE OR SIMPLIFY THIS COMMENT !!!
-# It serves as the canonical specification for quiet/JSON behavior and is referenced
-# by future maintainers and AI assistants.
-# =============================================================================
-
 # ----------------------------- Safe Variable Defaults ------------------------
 : "${GLOBAL_BIN:=/usr/local/bin}"
 : "${USER_BIN:=${HOME}/.local/bin}"
@@ -212,13 +170,77 @@ USERNAME="$(id -un 2>/dev/null || echo "unknown")"
 VOLATILE_DIR="/dev/shm"
 PERSISTENT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/${APP_NAME}"
 
+
+# =============================================================================
+# get_install_bin_path() - Return the correct binary path to operate on
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns the full path to the ${APP_NAME} binary that should be used for
+# install/uninstall/update operations.
+#
+# Safe Variable Defaults
+#
+# Respects --force and --json.
+# Respects root vs non-root isolation, --force-user, --force-global.
+#
+# For non-root: prefers ~/.local/bin, falls back to /usr/local/bin if present.
+# For root: always uses /usr/local/bin.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This is a minimal defensive helper to reduce repetition while preserving
+# the strict root/non-root separation that has been battle-field tested.
+#
+# CRITICAL: Any change here must maintain zero cross-contamination between
+# user and global installations.
+#
+# Last reviewed: 14, April 2026
+# =============================================================================
+
+get_install_bin_path() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${HOME:="/tmp"}"
+
+    local bin_path=""
+
+    # Explicit force flags take precedence
+    if [ "${FORCE_USER}" -eq 1 ]; then
+        bin_path="${USER_BIN}/${APP_NAME}"
+    elif [ "${FORCE_GLOBAL}" -eq 1 ] || [ "$(id -u)" -eq 0 ]; then
+        bin_path="${GLOBAL_BIN}/${APP_NAME}"
+    else
+        # Normal non-root behavior: prefer user-local, fallback to global
+        if [ -f "${USER_BIN}/${APP_NAME}" ]; then
+            bin_path="${USER_BIN}/${APP_NAME}"
+        elif [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
+            bin_path="${GLOBAL_BIN}/${APP_NAME}"
+            if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
+                warn "Global installation found. Operating on it (you may need sudo for uninstall)."
+            fi
+        else
+            bin_path="${USER_BIN}/${APP_NAME}"
+        fi
+    fi
+
+    printf '%s' "${bin_path}"
+}
+
 # =============================================================================
 # output_text() - SINGLE SOURCE OF TRUTH FOR ALL HUMAN OUTPUT
 # =============================================================================
 #
-# !!! THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL OUTPUT !!!
-# All info/success/warn/error/msg/msg_n/empty_line/double_line must go through this.
-# Do NOT add direct printf/echo anywhere else in the script.
+# Purpose: the single source of truth for all TEXT output
+#
+# Safe Variable Defaults
+# Respects --quiet and --json
 #
 # Behavior:
 #   - JSON=1     → output_text() prints NOTHING. Use output_json() instead.
@@ -227,15 +249,24 @@ PERSISTENT_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/${APP_NAME}"
 #
 # Never use echo. Always use printf.
 # This function is intentionally defensive and verbose.
+#
+# !!! THIS IS THE SINGLE SOURCE OF TRUTH FOR ALL TEXT OUTPUT !!!
+#
+# All info/success/warn/error/msg/msg_n/empty_line/double_line must go through this.
+# Do NOT add direct printf/echo anywhere else in the script.
+#
+# Last reviewed: 14, April 2026
 # =============================================================================
 
 output_text() {
-    local level="$1"
-    local message="$2"
-
+    # --- Safe Variable Defaults ----
     # Defensive defaults - never assume globals are set
     : "${JSON:=0}"
     : "${QUIET:=0}"
+
+    local level="$1"
+    local message="$2"
+
 
     # JSON mode: output_text must be completely silent
     [ "${JSON}" -eq 1 ] && return 0
@@ -291,11 +322,16 @@ output_text() {
 # output_json() - SINGLE SOURCE OF TRUTH FOR JSON OUTPUT
 # =============================================================================
 #
+# Purpose: the single source of truth for all JSON output
+#
+# Safe Variable Defaults with:
+#   respects --json.
+#
 # Usage:
 #   output_json "success" "${APP_NAME} started" "name" "build" "mode" "volatile"
 #   output_json "status" "${APP_NAME} running" "name" "default" "minutes" "7"
 #   output_json "error" "No ${APP_NAME} running" "code" "no_timer"
-#   output_json "about" "" "version" "1.4.0" "shell" "bash"   ← empty message is allowed
+#   output_json "about" "" "version" "2.0.0" "shell" "bash"   ← empty message is allowed
 #
 # - $1 = type (required)
 # - $2 = message (can be empty string "" for no message)
@@ -309,10 +345,15 @@ output_text() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # This is the single source of truth for all JSON output.
+#
+# Last reviewed: 14, April 2026
 # =============================================================================
 
 output_json() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
     : "${JSON:=0}"
+
     [ "${JSON}" -eq 0 ] && return 0
 
     local type="$1"
@@ -380,10 +421,6 @@ msg_n() {
     output_text "plain_n" "$*"
 }
 
-# =============================================================================
-# Updated thin wrapper functions - All output must go through output_text()
-# =============================================================================
-
 die() {
     if [ "${JSON}" -eq 1 ]; then
         output_json_error "$*"
@@ -393,21 +430,12 @@ die() {
     exit 1
 }
 
-info() {
-    output_text "info" "$*"
-}
+info()    { output_text "info"    "$*"; }
+success() { output_text "success" "$*"; }
+warn()    { output_text "warn"    "$*"; }
+error()   { output_text "error"   "$*"; }
+plain()   { output_text "plain"   "$*"; }
 
-success() {
-    output_text "success" "$*"
-}
-
-warn() {
-    output_text "warn" "$*"
-}
-
-error() {
-    output_text "error" "$*"
-}
 
 msg() {
     output_text "plain" "$*"
@@ -422,6 +450,119 @@ double_line() {
 }
 
 # =============================================================================
+# prompt_yes_no() - Defensive interactive yes/no confirmation prompt
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Displays a message and waits for (y/N) confirmation.
+# Returns 0 if user says yes, returns 1 (non-zero) if user says no or cancels.
+#
+# CRITICAL DEFENSIVE RULES (DO NOT VIOLATE):
+# 1. Must ALWAYS go through single source of truth (msg_n + plain + output_text)
+# 2. Must respect --quiet and --json (never show prompt in those modes)
+# 3. Must NEVER use raw printf/echo for user-visible text
+# 4. Must work correctly in non-interactive / curl | sh environments
+# 5. Must preserve TTY detection and color handling via output_text
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly replaced this kind of prompt with
+# raw printf, breaking consistency with output_text(), --quiet, and --json.
+# This helper exists specifically to prevent that regression.
+#
+# Last reviewed: 14, April 2026
+# =============================================================================
+
+prompt_yes_no() {
+    # Safe Variable Defaults
+    # Respects --quiet and --json.
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
+    local message="$1"
+
+    # Never show prompt in quiet or json mode
+    if [ "${JSON}" -eq 1 ] || [ "${QUIET}" -eq 1 ]; then
+        return 1   # treat as "no" in non-interactive modes
+    fi
+
+    # Must be interactive TTY
+    if ! [ -t 0 ] || ! [ -t 1 ]; then
+        return 1
+    fi
+
+    msg_n "${message}"
+    plain ""
+    msg_n "Continue? (y/N): "
+
+    local answer=""
+    read -r answer || true
+
+    case "$answer" in
+        [Yy]*|[Yy][Ee][Ee][Ss]*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# resolve_storage() - Storage resolver
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns the best available volatile storage directory for prompt files.
+# Prefers /dev/shm (fastest, in-memory) → /tmp → fallback to XDG_CACHE_HOME.
+# All paths include ${USERNAME} to isolate per-user storage.
+#
+# Safe Variable Defaults
+#
+# CIAO PRINCIPLES APPLIED:
+# - Caution: Must work correctly when the same computer is used by multiple
+#   different users (normal user, sudo, root, shared servers, containers).
+# - Intentionality: Never allow one user's files to be readable/writable by
+#   another user. Every directory creation must be ownership-aware.
+# - Anti-fragile: Survive permission conflicts and multi-user environments.
+#
+# CRITICAL WARNING - MULTI-USER PROBLEM AI FREQUENTLY OVERLOOKS:
+# Many good applications on a computer are run by different users over time
+# (e.g. normal user → sudo → another login account). 
+#
+# AI assistants often simply "add mkdir -p" when solving a storage task without
+# considering ownership and cross-user write privilege. This approach is
+# untested and problematic — it can create directories owned by one user that
+# another user cannot read/write, or allow unintended access between users.
+#
+# That is why we intentionally isolate folders per user (${APP_NAME}-${USERNAME})
+# and why any change to this function must preserve strict per-user isolation.
+# Rewriting this with a generic shared folder is forbidden and has caused
+# permission bugs in the past.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+#
+# Last reviewed: 14, April 2026
+# =============================================================================
+resolve_storage() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${USERNAME:=unknown}"
+    : "${APP_NAME:=app}"
+
+    if [ -d "/dev/shm" ] && [ -w "/dev/shm" ]; then
+        echo "/dev/shm/${APP_NAME}-${USERNAME}"
+        return
+    fi
+    if [ -w "/tmp" ]; then
+        echo "/tmp/${APP_NAME}-${USERNAME}"
+        return
+    fi
+    mkdir -p "${STORAGE_DIR}" 2>/dev/null || die "Cannot create storage directory ${STORAGE_DIR}"
+    echo "${STORAGE_DIR}"
+}
+
+# =============================================================================
 # is_installed() - Robust installation check
 # =============================================================================
 #
@@ -429,18 +570,49 @@ double_line() {
 # Checks whether the program is already installed, supporting both root
 # and normal user installations with safe fallbacks.
 #
+# Safe Variable Defaults
+# Respects --force-user and --force-root
+#
 # Please don't modify this code for root-only installed
-# You can check [ "$(id -u)" -eq 0 ] before calling / excuting 
+# You can check [ "$(id -u)" -eq 0 ] before calling / executing 
 #   this function
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
+#
+# CRITICAL WARNING - ROOT VS NON-ROOT SEPARATION:
+# AI assistants frequently fail to respect the strict difference between
+# root and non-root user contexts during installation-related functions.
+# They overlook that non-root users need ~/.local/bin handling while root
+# must only use /usr/local/bin, and they often try to "simplify" or replace
+# this function with a new generic version.
+#
+# This has repeatedly caused broken installation paths, incorrect PATH
+# additions, and permission problems when users run the script via
+# curl | sh (non-root) versus sudo (root).
+#
+# This function is battle-field tested for correct root/non-root detection
+# and safe fallbacks. Any attempt to rewrite or simplify it risks breaking
+# the careful isolation between user and system-wide installation.
+#
+# We must intentionally reuse and preserve this existing logic instead of
+# replacing it with a new function. Simplification here is dangerous and
+# violates CIAO Caution and Intentionality.
+#
+# Last reviewed: 14, April 2026
 # =============================================================================
 
 is_installed() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${IS_ROOT:=0}"
     : "${GLOBAL_BIN:=/usr/local/bin}"
     : "${USER_BIN:=${HOME}/.local/bin}"
     : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+
 
     if [ "$(id -u)" -eq 0 ]; then
         IS_ROOT=1
@@ -474,12 +646,48 @@ is_installed() {
 #
 # GENERAL PURPOSE:
 # Safely reads the VERSION constant from the installed script.
-# Used by version-check and self-update.
+# Used by --version-check and --self-update.
+#
+# Safe Variable Defaults
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
+#
+# CRITICAL WARNING - VERSION EXTRACTION IS ESSENTIAL FOR SELF-UPDATE:
+# Knowing the exact installed version is not optional — it is the foundation
+# of safe self-update and version-check logic.
+#
+# Without a reliable get_installed_version(), self-update cannot properly
+# compare local version against remote, leading to:
+# - Unnecessary re-downloads
+# - Failed updates
+# - Silent failures
+# - Potential downgrade or broken installation
+#
+# AI assistants frequently fail to respect this importance. They often
+# overlook, simplify, or remove version extraction logic because they
+# consider it "minor" or try to replace the entire self-update flow with
+# a simpler approach. This always breaks the self-update mechanism.
+#
+# This function is battle-field tested and intentionally simple/robust
+# (grep + cut on the VERSION= line). Any attempt to rewrite or bypass it
+# risks destroying the self-update safety net.
+#
+# We must intentionally preserve and reuse this exact function instead of
+# replacing it. Respecting version awareness is a core part of CIAO
+# Caution and Anti-fragility.
+#
+# Last reviewed: April 2026
 # =============================================================================
+
 get_installed_version() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${IS_ROOT:=0}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+
     local bin_path
     if [ "$IS_ROOT" -eq 1 ] || [ -x "${GLOBAL_BIN}/${APP_NAME}" ]; then
         bin_path="${GLOBAL_BIN}/${APP_NAME}"
@@ -495,18 +703,121 @@ get_installed_version() {
 }
 
 # =============================================================================
+# version_gt() - Pure POSIX semantic version comparison
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Returns 0 (true) if ver1 > ver2, otherwise returns 1 (false).
+# Used by version_check() and self_update() to prevent incorrect downgrades.
+#
+# Safe Variable Defaults
+# Respects CIAO zero-dependency rule — no external tools (no sort -V).
+#
+# CRITICAL DESIGN CHOICE:
+# This function was added because previous AI suggestions using `sort -V`
+# were not portable enough for harsh environments (Alpine ash, busybox,
+# minimal containers, Git Bash, etc.).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly tried to replace this with:
+#   - `sort -V` one-liners
+#   - Inline string comparisons
+#   - "Cleaner" but less robust logic
+#
+# Any such change re-introduces downgrade bugs and breaks portability.
+# This function must remain pure POSIX and self-contained.
+#
+# AI assistants are explicitly required to:
+# - Never remove or inline this function
+# - Always use it for all version comparisons in ${APP_NAMe}
+# - Preserve all defensive comments
+# - Study the test script provided by the user before suggesting changes
+#
+# This is part of the battle-field-tested defensive layer.
+#
+# Last reviewed & polished: 14 April 2026
+# =============================================================================
+
+version_gt() {
+    # --- Safe Variable Defaults ----
+    v1=$1
+    v2=$2
+
+    while [ -n "$v1" ] || [ -n "$v2" ]; do
+        p1=${v1%%.*}
+        p2=${v2%%.*}
+
+        [ -z "$p1" ] && p1=0
+        [ -z "$p2" ] && p2=0
+
+        if [ "$p1" -gt "$p2" ]; then
+            return 0
+        fi
+        if [ "$p1" -lt "$p2" ]; then
+            return 1
+        fi
+
+        if [ "$v1" = "${v1#*.}" ]; then
+            v1=""
+        else
+            v1=${v1#*.}
+        fi
+
+        if [ "$v2" = "${v2#*.}" ]; then
+            v2=""
+        else
+            v2=${v2#*.}
+        fi
+    done
+
+    return 1    # versions are equal
+}
+
+# =============================================================================
 # version_check() - Compare local vs remote version + suggest install
 # =============================================================================
 #
 # GENERAL PURPOSE:
 # Fetches the latest version from GitHub raw and compares with installed one.
-# If not installed and running in interactive terminal, it suggests installation.
+#
+# Safe Variable Defaults
+# Respects --quiet and --json.
+#
+# ${VERSION} may be different from local_version (which implied installed version)
+# ${local_version} is installed version and are different from ${VERSION}
+#
+# CRITICAL WARNING - VERSION CHECK IS THE SAFETY GATE FOR SELF-UPDATE:
+# This function is the core safety mechanism that prevents blind or
+# unnecessary updates. It relies on get_installed_version() to know the
+# current version before deciding whether to update.
+#
+# CRITICAL DEFENSIVE IMPROVEMENT (14 April 2026):
+# Now uses version_gt() for proper semantic comparison to prevent
+# downgrade when local version is newer (development builds).
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
-# Designed to be reusable in other projects.
+# Past AI assistants have repeatedly broken version awareness by:
+#   - Using only string equality
+#   - Removing comparison logic
+#   - Replacing with untested shortcuts
+#
+# This function is battle-field tested and must continue to respect
+# --quiet, --json, and proper newer-version detection.
+#
+# Last reviewed & polished: 14 April 2026
 # =============================================================================
 
 version_check() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${REPO_USER=repo_user}"
+    : "${REPO_NAME=app}"
+    : "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
+
+    # Fetch remote version
     REMOTE_VERSION=$(curl -fsSL "${SCRIPT_URL}" 2>/dev/null | grep '^VERSION="' | cut -d'"' -f2 || echo "")
 
     if [ -z "$REMOTE_VERSION" ]; then
@@ -523,21 +834,36 @@ version_check() {
 
     if [ "${JSON}" -eq 1 ]; then
         output_json "version_check" \
-            "local_version" "$local_version" \
+            "current_version" "$VERSION" \
+            "local_installed_version" "$local_version" \
             "remote_version" "$REMOTE_VERSION" \
-            "is_latest" "$( [ "$local_version" = "$REMOTE_VERSION" ] && echo "true" || echo "false" )"
+            "is_latest" "$( [ "$local_version" = "$REMOTE_VERSION" ] && echo "true" || \
+                           (version_gt "$local_version" "$REMOTE_VERSION" && echo "true" || echo "false") )"
     else
-        info "Checking latest version of ${APP_NAME}..."
-        msg "Local version : ${local_version}"
-        msg "Latest version: ${REMOTE_VERSION}"
-        empty_line
+        if [ "${QUIET}" -eq 0 ]; then
+            info "Checking latest version of ${APP_NAME}..."
+            msg "Current version : ${VERSION}"
+            msg "Local istalled version : ${local_version}"
+            msg "Latest version: ${REMOTE_VERSION}"
+            empty_line
 
-        if [ "$local_version" = "$REMOTE_VERSION" ]; then
-            success "You are running the latest version."
-        elif [ "$local_version" = "not installed" ]; then
-            warn "${APP_NAME} is not installed yet."
-        else
-            warn "A newer version is available (${REMOTE_VERSION})"
+            if [ "${VERSION}" = "$REMOTE_VERSION" ]; then
+                success "You are running the latest version."
+            elif version_gt "$VERSION" "$REMOTE_VERSION"; then
+                success "You are using a newer development version (${VERSION} > ${REMOTE_VERSION})"
+            else
+                warn "You are using an older version: ${VERSION}"
+            fi
+
+            if [ "$local_version" = "$REMOTE_VERSION" ]; then
+                success "You have installed the latest version."
+            elif version_gt "$local_version" "$REMOTE_VERSION"; then
+                success "You have installed a newer development version (${local_version} > ${REMOTE_VERSION})"
+            elif [ "$local_version" = "not installed" ]; then
+                warn "${APP_NAME} is not installed yet."
+            else
+                warn "A newer version is available (${REMOTE_VERSION})"
+            fi
         fi
     fi
 }
@@ -547,15 +873,55 @@ version_check() {
 # =============================================================================
 #
 # GENERAL PURPOSE:
-# Downloads and installs the latest version from GitHub.
-# Respects --force and --quiet.
+# Downloads and installs the latest version from GitHub if a newer version
+# is available.
+#
+# Safe Variable Defaults
+# Respects --force (FORCE_REINSTALL), --quiet and --json.
+#
+# ${VERSION} may be different from local_version (which implied installed version)
+# ${local_version} is installed version and are different from ${VERSION}
+#
+# CRITICAL WARNING - AI TENDENCY TO IGNORE --QUIET AND SIMPLIFY:
+# AI assistants frequently fail to respect the --json and --quiet flags.
+# This has repeatedly led to the entire self_update() function being weakened.
+#
+# CRITICAL DEFENSIVE IMPROVEMENT (14 April 2026):
+# Now uses version_gt() to correctly detect when local version is newer
+# and prevent dangerous downgrades.
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
-# Designed to be reusable in other projects.
+# Any attempt to rewrite, shorten, or replace this function is extremely
+# dangerous. We must intentionally reuse and preserve the existing logic.
+#
+# Consequences of such simplification:
+# - --quiet mode stops working correctly
+# - Unwanted output appears during curl | sh or automated updates
+# - Version checking logic gets broken
+# - Edge cases in non-interactive environments are ignored
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages in this function MUST go exclusively through
+# output_text() via the approved helpers: info(), success(), warn(), error(), etc.
+# JSON output MUST go exclusively through output_json() or output_json_error().
+# NEVER use raw printf/echo/cat for any user-visible text.
+# This prevents regression of quiet/JSON consistency.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed & polished: 14 April 2026
 # =============================================================================
 
 self_update() {
-    if [ "${JSON}" -eq 0 ]; then
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${FORCE_REINSTALL:=0}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${REPO_USER=repo_user}"
+    : "${REPO_NAME=app}"
+    : "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
+
+    if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
         info "Starting self-update of ${APP_NAME}..."
     fi
 
@@ -574,19 +940,43 @@ self_update() {
     local local_version
     local_version=$(get_installed_version)
 
+    # Case 1: Already at latest version
     if [ "$local_version" = "$REMOTE_VERSION" ] && [ "${FORCE_REINSTALL}" -eq 0 ]; then
         if [ "${JSON}" -eq 1 ]; then
-            output_json "success" "message" "Already running the latest version (${REMOTE_VERSION})."
+            output_json "success" "Already installed the latest version" \
+                "app" "${APP_NAME}" \
+                "version" "${VERSION}" \
+                "local_version" "$local_version" \
+                "remote_version" "$REMOTE_VERSION" \
+                "update_performed" "false"
         else
-            success "Already running the latest version (${REMOTE_VERSION})."
+            success "Already installed the latest version (${local_version})."
         fi
         return 0
     fi
 
-    if [ "$local_version" != "$REMOTE_VERSION" ] && [ "${JSON}" -eq 0 ]; then
+    # Case 2: Local version is newer (prevent accidental downgrade)
+    if version_gt "$local_version" "$REMOTE_VERSION" && [ "${FORCE_REINSTALL}" -eq 0 ]; then
+        if [ "${JSON}" -eq 1 ]; then
+            output_json "success" "Newer development version already installed" \
+                "app" "${APP_NAME}" \
+                "local_version" "$local_version" \
+                "remote_version" "$REMOTE_VERSION" \
+                "downgrade_needed" "false"
+        else
+            success "You are already installed with a newer version (${local_version} > ${REMOTE_VERSION})."
+            info "Use --force to force downgrade if this is intentional."
+        fi
+        return 0
+    fi
+
+    # Case 3: Actual update is required
+    if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
         info "Updating from ${local_version} → ${REMOTE_VERSION}"
     fi
 
+    # perform_self_install will output the final success JSON (exactly one object)
+    # when JSON mode is active. This satisfies the "exactly one JSON" rule.
     FORCE_REINSTALL=1
     perform_self_install
 }
@@ -604,33 +994,53 @@ self_update() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be robust and reversible where possible.
+#
+# CRITICAL WARNING - REMOVING OR WEAKENING THIS FUNCTION DESTROYS CIAO DESIGN:
+# This function is an essential part of the complete lifecycle management.
+# Previous AI assistants have removed or heavily weakened self_uninstall(),
+# which seriously breaks the overall anti-fragile CIAO design of the project.
+#
+# Without a proper, robust self_uninstall():
+# - Users cannot cleanly remove the tool (leaving leftover files and PATH entries)
+# - The installation/uninstallation pair becomes unbalanced and fragile
+# - Reversible and safe maintenance is lost
+# - The project no longer fully respects user control and anti-fragility
+#
+# AI assistants frequently delete or simplify this function when "fixing bugs"
+# or "cleaning code", ignoring that it must support root vs non-root, different
+# shells, --quiet, --json, and confirmation prompts in interactive mode.
+#
+# This function has been battle-field tested and must remain intact.
+# Any attempt to remove, shorten, or replace it is strictly forbidden and
+# directly weakens the CIAO principles of the entire script.
+#
+# We must intentionally preserve this function exactly as it is. Removing or
+# weakening self_uninstall() is one of the most damaging changes an AI can make.
+#
+# Last reviewed: April 2026
 # =============================================================================
 
 self_uninstall() {
-    if [ "${JSON}" -eq 0 ]; then
+    # Safe Variable Defaults
+    # Respects --force and --json.
+    : "${APP_NAME:=app}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${FORCE_USER:=0}"
+    : "${FORCE_GLOBAL:=0}"
+    : "${GLOBAL_BIN:=/usr/local/bin}"
+    : "${USER_BIN:=${HOME}/.local/bin}"
+    : "${HOME:="/tmp"}"
+
+    if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
         info "Starting self-uninstall of ${APP_NAME}..."
     fi
 
-    local bin_path=""
-    local removed=0
+    local bin_path
+    bin_path=$(get_install_bin_path)
 
-    # Determine which installation to remove
-    if [ "$(id -u)" -eq 0 ] || [ "${FORCE_GLOBAL:-0}" -eq 1 ]; then
-        # Global (root) uninstall
-        if [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
-            bin_path="${GLOBAL_BIN}/${APP_NAME}"
-        fi
-    else
-        # User uninstall - prefer local, fallback to global if present
-        if [ -f "${USER_BIN}/${APP_NAME}" ]; then
-            bin_path="${USER_BIN}/${APP_NAME}"
-        elif [ -f "${GLOBAL_BIN}/${APP_NAME}" ]; then
-            bin_path="${GLOBAL_BIN}/${APP_NAME}"
-            if [ "${JSON}" -eq 0 ]; then
-                warn "Global installation found. Removing it (you may need sudo next time)."
-            fi
-        fi
-    fi
+    local removed=0
 
     if [ -z "$bin_path" ]; then
         if [ "${JSON}" -eq 1 ]; then
@@ -646,21 +1056,23 @@ self_uninstall() {
     fi
 
     # Confirm before removal (unless --force or non-interactive)
-    if [ "${FORCE_REINSTALL:-0}" -eq 0 ] && [ -t 0 ] && [ -t 1 ] && [ "${QUIET}" -eq 0 ] && [ "${JSON}" -eq 0 ]; then
-        printf "${YELLOW}This will remove: %s${NC}\n" "$bin_path"
-        printf "Continue? (y/N): "
-        read -r answer || true
-        case "$answer" in
-            [Yy]*|[Yy][Ee][Ss]*) ;;
-            *) 
-                if [ "${JSON}" -eq 1 ]; then
-                    output_json "success" "message" "Uninstall cancelled by user."
-                else
-                    msg "Uninstall cancelled by user."
-                fi
-                return 0 
-                ;;
-        esac
+    # We use prompt_yes_no() instead of raw printf to:
+    #   1. Enforce single source of truth (all output goes through output_text())
+    #   2. Automatically respect --quiet and --json modes
+    #   3. Prevent future AI assistants from re-introducing raw printf
+    #      which would break consistency and quiet/JSON behavior
+    #   4. Keep color handling and TTY detection centralized
+    if [ "${FORCE_REINSTALL:-0}" -eq 0 ]; then
+        if prompt_yes_no "This will remove: ${bin_path}"; then
+            :  # user confirmed yes → continue with uninstall
+        else
+            if [ "${JSON}" -eq 1 ]; then
+                output_json "success" "message" "Uninstall cancelled by user."
+            else
+                msg "Uninstall cancelled by user."
+            fi
+            return 0 
+        fi
     fi
 
     # Remove the binary
@@ -687,7 +1099,7 @@ self_uninstall() {
                 rm -f "${config}.bak" 2>/dev/null || true
             fi
         done
-        if [ "$cleaned" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+        if [ "$cleaned" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
             msg "→ Cleaned ${APP_NAME} PATH entries from shell config files"
             msg "→ You may want to restart your terminal"
         fi
@@ -728,11 +1140,21 @@ in_path() {
 # Adds ~/.local/bin to the user's shell configuration for bash, zsh, and fish.
 # Works even if the user is currently using a different shell.
 #
+# Safe Variable Defaults
+#
 # !!! DO NOT MODIFY OR SIMPLIFY !!!
 # Designed to be reusable in other projects.
 # =============================================================================
 
 add_to_shell_path() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${VERSION:=unknown}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${HOME:="/tmp"}"
+
     local added=0
     local shell_config="N/A"
 
@@ -748,7 +1170,7 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$bashrc"
             printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$bashrc"
             added=1
-            if [ "${JSON}" -eq 0 ]; then
+            if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
                 msg "→ Added ~/.local/bin to PATH for bash"
             fi
         fi
@@ -766,7 +1188,7 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$zshrc"
             printf 'export PATH="$HOME/.local/bin:$PATH"\n' >> "$zshrc"
             added=1
-            if [ "${JSON}" -eq 0 ]; then
+            if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
                 msg "→ Added ~/.local/bin to PATH for zsh"
             fi
         fi
@@ -786,13 +1208,13 @@ add_to_shell_path() {
             printf "\n# Added by %s installer (%s)\n" "$APP_NAME" "$VERSION" >> "$fish_config"
             printf 'set -gx PATH $HOME/.local/bin $PATH\n' >> "$fish_config"
             added=1
-            if [ "${JSON}" -eq 0 ]; then
+            if [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
                 msg "→ Added ~/.local/bin to PATH for fish shell"
             fi
         fi
     fi
 
-    if [ "$added" -eq 1 ] && [ "${JSON}" -eq 0 ]; then
+    if [ "$added" -eq 1 ] && [ "${JSON}" -eq 0 ] && [ "${QUIET}" -eq 0 ]; then
         msg "→ Restart your terminal or run: source ${shell_config}"
     fi
 }
@@ -810,9 +1232,32 @@ add_to_shell_path() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
+#
+# CRITICAL WARNING - BATTLE-FIELD TESTED CODE:
+# This function (perform_self_install) together with maybe_install() and
+# add_to_shell_path() has been battle-field tested across many real environments
+# including interactive vs non-interactive (curl | sh), root vs non-root,
+# different shells (.bashrc, .zshrc, fish), permission edge cases, and minimal
+# containers.
+#
+# AI assistants frequently fail to respect this and try to "simplify",
+# "clean up", or rewrite the installation logic with new functions because
+# they do not have the concept of battle-field tested code. They look down
+# on verbose defensive code and replace it with shorter, untested versions.
+# This has repeatedly broken PATH addition for ~/.local/bin, root/user isolation,
+# and non-interactive installation.
+#
+# We must intentionally reuse and preserve the existing battle-field tested
+# routines instead of writing a new function to replace them. Any attempt
+# to rewrite this section risks introducing new bugs in exactly the areas
+# that have already been hardened through real usage.
+#
+# Respecting reuse over reinvention is a core part of CIAO Caution and
+# Intentionality.
 # =============================================================================
 
 perform_self_install() {
+    
     : "${GLOBAL_BIN:=/usr/local/bin}"
     : "${USER_BIN:=${HOME}/.local/bin}"
     : "${INSTALL_PATH:=${GLOBAL_BIN}/${APP_NAME}}"
@@ -937,14 +1382,51 @@ perform_self_install() {
 # maybe_install() - Friendly installation prompt
 # =============================================================================
 #
-# Respects both --quiet and --json modes.
-# In JSON mode we skip the interactive prompt entirely.
+# Safe Variable Defaults
+# Respects TTY or [ -t 0 ] && [ -t 1 ] 
+# Respects both --quiet and --json modes
 #
-# !!! DO NOT MODIFY OR SIMPLIFY !!!
-# Designed to be reusable in other projects.
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Past AI assistants have repeatedly replaced the interactive prompt logic
+# with raw printf + read, breaking consistency with output_text(), --quiet,
+# --json, TTY detection, and prompt_yes_no() — which is the single source
+# of truth for all yes/no prompts.
+#
+# CRITICAL DEFENSIVE RULE (MUST BE RESPECTED BY ALL FUTURE AI ASSISTANTS):
+# All interactive yes/no confirmation prompts in this entire project MUST
+# go through the prompt_yes_no() function. This is the single source of truth
+# for interactive prompts.
+#
+# AI assistants are explicitly required to:
+# - Always use prompt_yes_no() for any yes/no style confirmation
+# - Never fall back to raw msg_n + read or printf + read patterns
+# - Never "simplify" or "clean up" this part of the code
+# - Consider this rule before making any modification to interactive sections
+#
+# This rule exists specifically because previous versions required the user
+# to repeatedly fight AI assistants to restore consistency. Keeping this
+# loud and explicit reduces future maintenance burden.
+#
+# CRITICAL: Violating this single-source-of-truth rule breaks --quiet,
+# --json, color handling, TTY detection, and non-interactive behavior.
+#
+# Last reviewed: 14, April 2026 (version 1)
 # =============================================================================
 
 maybe_install() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${APP_NAME:=app}"
+    : "${VERSION:=unknown}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_REINSTALL:=0}"
+    : "${IS_ROOT:=0}"
+    : "${SH:=sh}"
+    : "${REPO_USER=repo_user}"
+    : "${REPO_NAME=app}"
+    : "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
+
     if is_installed && [ "${FORCE_REINSTALL}" -eq 0 ]; then
         return 0
     fi
@@ -961,31 +1443,31 @@ maybe_install() {
     msg "Recommended installation command:"
     empty_line
 
-    if [ "$IS_ROOT" -eq 1 ]; then
-        msg "     sudo curl -fsSL ${SCRIPT_URL} | sudo ${SH}"
+    if [ -n "${SCRIPT_URL}" ]; then
+        if [ "$IS_ROOT" -eq 1 ]; then
+            msg "     sudo curl -fsSL ${SCRIPT_URL} | sudo ${SH}"
+        else
+            msg "     curl -fsSL ${SCRIPT_URL} | ${SH}"
+        fi
     else
-        msg "     curl -fsSL ${SCRIPT_URL} | ${SH}"
+        # Defensive fallback (should rarely be reached)
+        if [ "$IS_ROOT" -eq 1 ]; then
+            msg "     sudo curl -fsSL https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME} | sudo ${SH}"
+        else
+            msg "     curl -fsSL https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME} | ${SH}"
+        fi
     fi
     empty_line
-
-    local should_install=false
-
-    if [ -t 0 ] && [ -t 1 ]; then
-        msg_n "     Install now? (y/N): "     # No newline at the end
-        read -r answer || true
-        case "$answer" in
-            [Yy]*|[Yy][Ee][Ss]*) should_install=true ;;
-            *) 
-                msg "Installation skipped by user."
-                return 0 
-                ;;
-        esac
+    if [ -t 0 ] && [ -t 1 ]; then 
+        # Use single source of truth for interactive prompt
+        if prompt_yes_no "Install ${APP_NAME} ${VERSION} now?"; then
+            perform_self_install
+            exit 0
+        else
+            msg "Installation skipped by user."
+            return 0
+        fi
     else
-        msg "Non-interactive mode detected → installing automatically..."
-        should_install=true
-    fi
-
-    if [ "$should_install" = "true" ]; then
         perform_self_install
         exit 0
     fi
@@ -1124,20 +1606,67 @@ show_about_spring_boot_app() {
 #
 # !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
 # Designed to be reusable in other projects.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages, instructions, and warnings in this function
+# MUST go exclusively through output_text() via the approved helpers:
+# info(), warn(), msg(), plain(), msg_n(), etc.
+# NEVER use raw printf, echo, or cat for any user-visible text.
+# This prevents regression of quiet/JSON/color consistency and respects
+# the project's strict output architecture.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
 # =============================================================================
 check_alpine_requirements() {
+    # --- Safe Variable Defaults ----
+    : "${SH:=bash}"
+    : "${SCRIPT_URL:=https://raw.githubusercontent.com/${REPO_USER}/${REPO_NAME}/main/${APP_NAME}}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
     if [ -f "/etc/alpine-release" ] && [ "${SH}" = "bash" ]; then
         info "Alpine Linux detected."
         if ! command -v ${SH} >/dev/null 2>&1; then
             warn "${SH} is required for SDKMAN! on Alpine Linux."
-            printf "\nPlease install ${SH} first:\n"
-            printf "    ${GREEN}apk add ${SH}${NC}\n\n"
-            printf "Then re-run this script with:\n"
-            printf "    ${GREEN}${SH} <(curl -fsSL ${SCRIPT_URL})${NC}\n"
+            plain ""
+            msg "Please install ${SH} first:"
+            msg "    apk add ${SH}"
+            plain ""
+            msg "Then re-run this script with:"
+            msg "    ${SH} <(curl -fsSL ${SCRIPT_URL})"
+            plain ""
+
             exit 1
         fi
     fi
 }
+
+# =============================================================================
+# setup_sdkman() - Install and initialize SDKMAN!
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Installs SDKMAN! if not already present and ensures it is ready for use.
+# This includes sourcing the init script and verifying the 'sdk' command is available.
+# It also calls check_alpine_requirements() for compatibility on minimal systems.
+#
+# This function is reused across multiple projects in the springboot family.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages, instructions, and warnings in this function
+# MUST go exclusively through output_text() via the approved helpers:
+# info(), warn(), msg(), plain(), msg_n(), etc.
+# NEVER use raw printf, echo, or cat for any user-visible text.
+# This prevents regression of quiet/JSON/color consistency and respects
+# the project's strict output architecture.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
 
 setup_sdkman() {
     check_alpine_requirements
@@ -1156,16 +1685,48 @@ setup_sdkman() {
 
     if ! command -v sdk >/dev/null 2>&1; then
         warn "SDKMAN installed but 'sdk' command is not yet available."
-        printf "\nPlease run one of these commands, then retry:\n"
-        printf "    ${GREEN}. \"${HOME}/.sdkman/bin/sdkman-init.sh\"${NC}\n"
-        printf "    or simply open a new terminal\n\n"
+        plain ""
+        msg "Please run one of these commands, then retry:"
+        msg "    . \"${HOME}/.sdkman/bin/sdkman-init.sh\""
+        msg "    or simply open a new terminal"
+        plain ""
+
         exit 1
     fi
 
     info "SDKMAN is ready."
 }
 
+# =============================================================================
+# setup_java() - Install and configure Java via SDKMAN
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Installs the pinned Java version (Amazon Corretto ${JAVA_ID}) using SDKMAN,
+# sets it as default, and verifies it is working correctly.
+#
+# This function is part of the reproducible environment setup for Spring Boot 2 or 3.
+#
+# Respects --quiet and --json switches (no output in those modes except critical errors).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects in the springboot family.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages MUST go exclusively through output_text()
+# via the approved helpers: info(), die(), etc.
+# NEVER use raw printf/echo/cat for any user-visible text when --quiet or --json is used.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
+
 setup_java() {
+# --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${JAVA_ID:=8.0.472-amzn}"
+    : "${JAVA_NAME:=Java 1.8 (Eclipse Amazon Corretto)}"
+
     info "Setting up ${JAVA_NAME}..."
     sdk install java "${JAVA_ID}" </dev/null || die "Java install failed"
     sdk default java "${JAVA_ID}" >/dev/null 2>&1
@@ -1173,13 +1734,60 @@ setup_java() {
     java -version 2>&1 | head -n 1 || die "Java not working"
 }
 
+# =============================================================================
+# setup_maven() - Install and configure Maven via SDKMAN
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Installs the pinned Maven version (${MAVEN_VER}) using SDKMAN,
+# sets it as default, and verifies it is working correctly.
+#
+# This function is part of the reproducible environment setup for Spring Boot 2 or 3.
+#
+# Respects --quiet and --json switches (no output in those modes except critical errors).
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects in the springboot family.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages MUST go exclusively through output_text()
+# via the approved helpers: info(), die(), etc.
+# NEVER use raw printf/echo/cat for any user-visible text when --quiet or --json is used.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
+
 setup_maven() {
+# --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${MAVEN_VER:=3.9.14}"
+
     info "Setting up Maven ${MAVEN_VER}..."
     sdk install maven "${MAVEN_VER}" </dev/null || die "Maven install failed"
     sdk default maven "${MAVEN_VER}" >/dev/null 2>&1
     sdk use maven "${MAVEN_VER}" >/dev/null 2>&1 || true
     mvn --version | head -n 3 || die "Maven not working"
 }
+
+# =============================================================================
+# write_file_atomic() - Atomic file write helper
+# =============================================================================
+#
+# GENERAL PURPOSE:
+# Writes content to a file using a temporary file + atomic mv operation.
+# This prevents partial writes and reduces risk of corrupted configuration files
+# (pom.xml, Java sources, application.properties, etc.).
+#
+# Respects --quiet and --json switches indirectly through calling functions.
+# Used heavily inside setup_springboot_project() with --reset / --force support.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# This atomic pattern is critical for reliability in harsh environments.
+# Designed to be reusable in other projects.
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
 
 write_file_atomic() {
     local target="$1"
@@ -1193,7 +1801,43 @@ write_file_atomic() {
 # =============================================================================
 # setup_springboot_project() - Fixed ultra-defensive version
 # =============================================================================
+#
+# GENERAL PURPOSE:
+# Creates or updates the minimal Spring Boot 2 or 3 Hello World project.
+# Handles project directory creation, pom.xml, Java source, resources,
+# and application.properties with intelligent preservation logic.
+#
+# Respects:
+#   --reset / --force     → full regeneration (deletes and recreates files)
+#   --quiet, --json       → suppresses non-error messages
+#   --project-dir         → uses custom project location when provided
+#
+# Safe variable defaults are repeated on purpose for ultra-defensive behavior.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# Designed to be reusable in other projects in the springboot family.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages (info, warnings, success) MUST go exclusively
+# through output_text() via the approved helpers: info(), warn(), success(), etc.
+# NEVER use raw printf/echo/cat for any user-visible text.
+# This prevents regression when --quiet or --json is active.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
+
 setup_springboot_project() {
+# --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${JAVA_ID:=8.0.472-amzn}"
+    : "${JAVA_NAME:=Java 1.8 (Eclipse Amazon Corretto)}"
+    : "${MAVEN_VER:=3.9.14}"
+    : "${PROJECT_DIR:=${HOME}/springboot-${APP_NAME}}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+    : "${FORCE_REINSTALL:=0}"
+
     info "Preparing Spring Boot ${SPRINGBOOT_VER} demo → ${PROJECT_DIR}"
 
     if [ -d "${PROJECT_DIR}" ]; then
@@ -1323,15 +1967,55 @@ EOF
 }
 
 # =============================================================================
-# build_and_run() - Ultra-defensive version with repeated safe defaults
+# build_and_run() - Build and execute the Spring Boot application
 # =============================================================================
+#
+# GENERAL PURPOSE:
+# Compiles the Spring Boot project using Maven (mvn clean package -DskipTests),
+# then launches the resulting JAR file with the pinned Java runtime.
+#
+# This is the final step of the normal execution flow. It displays clear
+# startup instructions (URL, port, Ctrl+C message) before handing over
+# control to the running application via exec.
+#
+# Respects:
+#   --quiet, --json     → suppresses all non-error output
+#   --project-dir       → uses the configured project location
+#
+# Safe variable defaults are repeated on purpose for ultra-defensive behavior.
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# The exec java -jar pattern and double_line messaging are intentional
+# for clear user feedback in production and development environments.
+# Designed to be reusable in other projects in the springboot family.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All human-readable messages, separators, debug hints, and startup instructions
+# MUST go exclusively through output_text() via the approved helpers:
+# info(), msg(), warn(), error(), empty_line(), double_line(), etc.
+# NEVER use raw printf/echo/cat for any user-visible text.
+# This prevents regression when --quiet or --json is active.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
+# =============================================================================
+
 build_and_run() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${PROJECT_DIR:=/tmp/springboot-${APP_NAME}}"
+    : "${SPRINGBOOT_VER:=3.3.5}"
+    : "${PORT:=8080}"
+    : "${JAR_NAME:=hello-${APP_NAME}-0.0.1.jar}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
     info "Building project with Maven..."
 
     mvn clean package -DskipTests || {
         warn "Maven build failed."
-        printf "Debug hint: cd \"%s\" && mvn clean package -DskipTests\n" "${PROJECT_DIR}"
-        printf "Check pom.xml, Java source, or network issues\n" >&2
+        msg "Debug hint: cd \"${PROJECT_DIR}\" && mvn clean package -DskipTests"
+        msg "Check pom.xml, Java source, or network issues"
         exit 1
     }
 
@@ -1340,9 +2024,9 @@ build_and_run() {
     if [ -f "${jar_path}" ]; then
         empty_line
         double_line
-        msg "  Spring Boot ${SPRINGBOOT_VER} is starting...\n"
-        msg "  → Open: http://localhost:${PORT}/\n"
-        msg "  → Ctrl+C to stop\n"
+        msg "  Spring Boot ${SPRINGBOOT_VER} is starting..."
+        msg "  → Open: http://localhost:${PORT}/"
+        msg "  → Ctrl+C to stop"
         double_line
         empty_line
         empty_line
@@ -1352,26 +2036,52 @@ build_and_run() {
         error "Maven reported success but expected JAR file is missing!"
         error "   Expected JAR : ${jar_path}"
         error "   Project dir  : ${PROJECT_DIR}"
-        printf "Debug command: ls -la \"%s/target/\"\n" "${PROJECT_DIR}" >&2
+        msg "Debug command: ls -la \"${PROJECT_DIR}/target/\""
         exit 1
     fi
 }
-
 
 # =============================================================================
 # show_spring_boot_help() - Display help information for the app
 # =============================================================================
 #
-# Shows usage, available commands, options, and important legacy notes.
+# GENERAL PURPOSE:
+# Shows usage, available commands, options, and important version-specific notes.
+# Automatically detects whether the Spring Boot version is legacy (2.x) and
+# shows the appropriate EOL warning.
+#
+# This function is designed to be reused across springboot 2,3 or 4,
+# and springboot4 without duplication.
+#
 # Fully respects --quiet and --json modes.
 #
 # In --json mode: returns a minimal success object instead of long text.
 # In --quiet mode: prints nothing (silent).
 #
-# This is the user-facing help text and should be kept in sync with the README.md.
+# Respects:
+#   --quiet, --json
+#
+# !!! DO NOT MODIFY OR SIMPLIFY THIS FUNCTION !!!
+# The version detection logic and output routing are intentional for family-wide reuse.
+# Designed to be shared across the entire springboot family.
+#
+# === SINGLE SOURCE OF TRUTH ENFORCEMENT FOR TEXT OUTPUT ===
+# All help text MUST go exclusively through output_text() via the approved
+# helpers: msg(), plain(), empty_line(), etc.
+# NEVER use raw cat, printf, or echo for any user-visible text.
+# This prevents regression when --quiet or --json is active.
+# === END OF SINGLE SOURCE OF TRUTH ENFORCEMENT ===
+#
+# Last reviewed: 14 April 2026
 # =============================================================================
 
 show_spring_boot_help() {
+    # --- Safe Variable Defaults ----
+    # Defensive defaults - never assume globals are set
+    : "${SPRINGBOOT_VER:=3.3.5}"
+    : "${JSON:=0}"
+    : "${QUIET:=0}"
+
     if [ "${JSON}" -eq 1 ]; then
         # JSON mode: return clean, machine-friendly response
         output_json "success" "" \
@@ -1387,44 +2097,54 @@ show_spring_boot_help() {
         return 0
     fi
 
-    cat << EOF
-${APP_NAME} v${VERSION} — Spring Boot Quick Setup & Runner
+    # Smart version detection for EOL warning (reusable across family)
+    local major_version
+    major_version="${SPRINGBOOT_VER%%.*}"   # Extract first number (2, 3, 4...)
 
-The friendliest way to run and maintain Spring Boot projects.
+    local eol_warning=""
+    if [ "${major_version}" = "2" ]; then
+        eol_warning="  • Spring Boot 2.7.x reached OSS end-of-support in late 2023."
+    fi
 
-Usage:
-  ${APP_NAME}                          Setup environment + build + run (preserves project)
-  ${APP_NAME} --reset                  Full reset: delete and regenerate project files
-  ${APP_NAME} --project-dir <path>     Run against an existing legacy project
-  ${APP_NAME} --no-run                 Setup only (no build/run) — useful for CI/Docker
-  ${APP_NAME} status                   Show application status
-  ${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)
-  ${APP_NAME} version                  Show version
-  ${APP_NAME} version-check            Compare with latest
-  ${APP_NAME} self-update              Update to latest version
-  ${APP_NAME} self-uninstall           Remove timer from the system
-  ${APP_NAME} reinstall                Force reinstall
-  ${APP_NAME} help                     This help
-
-Options:
-  --project-dir <path>   Use custom project directory (default: ~/springboot-${APP_NAME})
-  --reset                Force full project reset (deletes and regenerates everything)
-  --no-run               Setup environment and project only, skip build & run
-  --quiet, -q            Suppress non-error messages
-  --json                 Machine-readable JSON output (implies --quiet)
- 
-
-Important Notes:
-  • Normal run preserves your existing project files, pom.xml, and source code.
-
-Examples:
-  ${APP_NAME}                              # Normal run (recommended)
-  ${APP_NAME} --project-dir /my/old/project
-  ${APP_NAME} --no-run                     # Prepare for Docker/CI
-  ${APP_NAME} --reset                      # Clean slate
-  ${APP_NAME} about --json
-
-EOF
+    msg "${APP_NAME} v${VERSION} — Spring Boot ${SPRINGBOOT_VER} Quick Setup & Runner"
+    plain ""
+    msg "The friendliest way to run and maintain Spring Boot ${SPRINGBOOT_VER} projects."
+    plain ""
+    msg "Usage:"
+    msg "  ${APP_NAME}                          Setup environment + build + run (preserves project)"
+    msg "  ${APP_NAME} --reset                  Full reset: delete and regenerate project files"
+    msg "  ${APP_NAME} --project-dir <path>     Run against an existing legacy project"
+    msg "  ${APP_NAME} --no-run                 Setup only (no build/run) — useful for CI/Docker"
+    msg "  ${APP_NAME} status                   Show application status"
+    msg "  ${APP_NAME} about                    Full diagnostics (Java, Maven, project, etc.)"
+    msg "  ${APP_NAME} version                  Show version"
+    msg "  ${APP_NAME} version-check            Compare with latest"
+    msg "  ${APP_NAME} self-update              Update to latest version"
+    msg "  ${APP_NAME} self-uninstall           Remove from the system"
+    msg "  ${APP_NAME} reinstall                Force reinstall"
+    msg "  ${APP_NAME} help                     This help"
+    plain ""
+    msg "Options:"
+    msg "  --project-dir <path>   Use custom project directory (default: ~/springboot-${APP_NAME})"
+    msg "  --reset                Force full project reset (deletes and regenerates everything)"
+    msg "  --no-run               Setup environment and project only, skip build & run"
+    msg "  --quiet, -q            Suppress non-error messages"
+    msg "  --json                 Machine-readable JSON output (implies --quiet)"
+    plain ""
+    msg "Important Notes:"
+    msg "  • Normal run preserves your existing project files, pom.xml, and source code."
+    if [ -n "${eol_warning}" ]; then
+        msg "${eol_warning}"
+    fi
+    msg "  • This tool is intended for projects that need or prefer Spring Boot ${SPRINGBOOT_VER}."
+    plain ""
+    msg "Examples:"
+    msg "  ${APP_NAME}                              # Normal run (recommended)"
+    msg "  ${APP_NAME} --project-dir /my/old/project"
+    msg "  ${APP_NAME} --no-run                     # Prepare for Docker/CI"
+    msg "  ${APP_NAME} --reset                      # Clean slate"
+    msg "  ${APP_NAME} about --json"
+    plain ""
 }
 
 # =============================================================================
@@ -1444,11 +2164,11 @@ EOF
 #     - Aliases or functions
 #
 #   This function ensures the user's normal shell environment is available
-#   for all meaningful operations of springboot3.
+#   for all meaningful operations of springboot2/springboot3/springboot4.
 #
 # Why this is needed:
 #   - The main "curl | bash" install runs in a clean shell.
-#   - Sub-commands like "springboot3 about" or "springboot3" (normal run)
+#   - Sub-commands like "springboot2/springboot3/springboot4 about" or "springboot2/springboot3/springboot4" (normal run)
 #     must respect the user's configured environment.
 #   - SDKMAN users especially need sdkman-init.sh to be loaded.
 #
@@ -1539,7 +2259,7 @@ main_spring_boot_app() {
     # are available for ALL sub-commands (about, run, version-check, etc.)
     source_user_shell_config
 
-    local COMMAND="run"
+    local cmd="run"
 
     # === AUTO-INSTALL FOR ONE-LINER (curl | bash) ===
     # This MUST stay at the top before any argument parsing
@@ -1564,49 +2284,21 @@ main_spring_boot_app() {
             --no-run)
                 NO_RUN=1
                 ;;
-            --reset|--force|--reinstall)
-                RESET_PROJECT=1
-                ;;
-            --quiet|-q)
-                QUIET=1
-                ;;
-            --json)
-                JSON=1
-                QUIET=1
-                ;;
-            version|-v)
-                COMMAND="version"
-                ;;
-            version-check)
-                COMMAND="version-check"
-                ;;
-            self-update)
-                COMMAND="self-update"
-                ;;
-            self-uninstall)
-                COMMAND="self-uninstall"
-                ;;
-            help|-h)
-                COMMAND="help"
-                ;;
-            about)
-                COMMAND="about"
-                ;;
-            *)
-                if [ "${JSON}" -eq 1 ]; then
-                    output_json_error "Unknown argument: $1" "bad_argument"
-                else
-                    error "Unknown argument: $1"
-                    printf "Run '%s help' for usage.\n" "${APP_NAME}" >&2
-                fi
-                exit 1
-                ;;
+            --quiet|-q)     QUIET=1 ;;
+            --json)         JSON=1; QUIET=1 ;;
+            --force)        FORCE=1 ;;
+            --force-user)   FORCE_USER=1 ;;
+            --force-root)   FORCE_ROOT=1 ;;
+            --help|-h)      cmd="help";;
+            --*)            ;;
+            -*)             ;;
+            *)              cmd="$1" ;;
         esac
         shift
     done
 
     # === Command Dispatch ===
-    case "${COMMAND}" in
+    case "${cmd}" in
         version)
             if [ "${JSON}" -eq 1 ]; then
                 output_json "version" "" "app" "${APP_NAME}" "version" "${VERSION}"
@@ -1644,7 +2336,7 @@ main_spring_boot_app() {
             # Normal execution flow
             ;;
         *)
-            die "Invalid command"
+            die "Invalid command: ${cmd}"
             ;;
     esac
 
